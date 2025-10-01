@@ -3,6 +3,7 @@ import pandas as pd
 from sqlalchemy import create_engine, text
 import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
+from matplotlib.patches import Rectangle
 
 # ---------------- STREAMLIT CONFIG ----------------
 st.set_page_config(page_title="Client Dashboard", layout="wide")
@@ -23,7 +24,7 @@ def run_query(query, params=None):
     with engine.connect() as conn:
         return pd.read_sql(text(query), conn, params=params)
 
-# ---------------- PARTY PREF TABLE HELPER ----------------
+# ---------------- PARTY PREF TABLE (Table 1) ----------------
 def get_party_preference_table(df):
     vote_map = {
         'Aam Aadmi Party (AAP)': 'AAP',
@@ -67,7 +68,6 @@ def get_party_preference_table(df):
 
     return party_pref_table
 
-# ---------------- PLOT TABLE HELPER ----------------
 def plot_party_table(party_pref_table):
     bold_font = fm.FontProperties(fname="Aptos-Display-Bold.ttf")
     aptos_font = fm.FontProperties(fname="Aptos-Display.ttf")
@@ -128,11 +128,175 @@ def plot_party_table(party_pref_table):
 
     return fig
 
-# ---------------- HELPER: WRAPPER FOR TABLE SECTIONS ----------------
+# ---------------- TABLE 2: Voter Swing Matrix ----------------
+def get_voter_swing_matrix(df):
+    prev_col = ' Which party did you vote for in the previous 2022 elections? '
+    curr_col = 'If elections were held in Punjab today, which party would you v'
+
+    vote_map = {
+        'Aam Aadmi Party (AAP)': 'AAP',
+        'Akali Dal (Waris Punjab De)': 'Akali Dal (WPD)',
+        'Bahujan Samaj Party (BSP)': 'BSP',
+        'Bharatiya Janata Party (BJP)': 'BJP',
+        "Can't Say": "Can't Say",
+        'Congress': 'INC',
+        'NOTA': 'NOTA',
+        'Other': 'Other',
+        'Shiromani Akali Dal (Amritsar)': 'SAD (A)',
+        'Shiromani Akali Dal (Badal)': 'SAD (B)',
+        'Did Not Vote': 'Did Not Vote'
+    }
+
+    df[prev_col] = df[prev_col].replace(vote_map).fillna("Other").astype(str).str.strip()
+    df[curr_col] = df[curr_col].replace(vote_map).fillna("Other").astype(str).str.strip()
+
+    pivot_counts = pd.pivot_table(
+        df,
+        index=prev_col,
+        columns=curr_col,
+        aggfunc='size',
+        fill_value=0
+    )
+
+    pivot_percent = pivot_counts.div(pivot_counts.sum(axis=1), axis=0) * 100
+    pivot_percent = pivot_percent.round(2)
+
+    total_votes_per_party = pivot_counts.sum(axis=0)
+    total_votes = total_votes_per_party.sum()
+    true_totals_percent = (total_votes_per_party / total_votes * 100).round(2)
+    pivot_percent.loc['TOTAL'] = true_totals_percent
+
+    pivot_percent = pivot_percent.applymap(lambda x: f"{x:.2f}%" if isinstance(x, (int, float)) else x)
+
+    row_order = ['AAP', 'INC', 'BJP', 'SAD (B)', 'SAD (A)', 'BSP',
+                 'Akali Dal (WPD)', 'Other', 'Did Not Vote', "Can't Say", 'TOTAL']
+    col_order = ['AAP', 'INC', 'BJP', 'SAD (B)', 'SAD (A)', 'BSP',
+                 'Akali Dal (WPD)', 'NOTA', 'Other', "Can't Say"]
+
+    pivot_percent = pivot_percent.reindex(index=row_order, columns=col_order, fill_value='-')
+
+    pivot_data = pivot_percent.reset_index()
+    pivot_data.rename(columns={pivot_data.columns[0]: 'PARTY'}, inplace=True)
+    data = [list(pivot_data.columns)] + pivot_data.values.tolist()
+
+    return data, pivot_data, row_order, col_order
+
+def plot_voter_swing_matrix(data, pivot_data, col_order):
+    bold_font = fm.FontProperties(fname="Aptos-Display-Bold.ttf")
+    aptos_font = fm.FontProperties(fname="Aptos-Display.ttf")
+
+    fig = plt.figure(figsize=(12, 9))
+    ax2 = fig.add_axes([0.042, 0.24, 0.96, 0.45])
+    ax2.axis('off')
+
+    # === Title above the table ===
+    ax2.text(
+        0.017, 1.10,   # moved higher so it does not overlap
+        "2) VOTER SWING MATRIX",
+        fontsize=14, fontproperties=bold_font, ha='left'
+    )
+
+    # === Column widths ===
+    left_col_width = 0.14
+    table_col_widths = [0.075] * len(col_order)
+
+    table2 = ax2.table(
+        cellText=data,
+        cellLoc='center',
+        loc='center',
+        colWidths=[left_col_width] + table_col_widths,
+    )
+
+    # Wrap header for Akali Dal (WPD)
+    for col_idx, col_name in enumerate(pivot_data.columns):
+        cell = table2[0, col_idx]
+        if col_name == 'Akali Dal (WPD)':
+            cell.get_text().set_text('Akali\nDal (WPD)')
+
+    # === Styling ===
+    for (row_idx, col_idx), cell in table2.get_celld().items():
+        is_header = row_idx == 0
+        is_first_col = col_idx == 0
+        is_total_row = (row_idx == len(data) - 1)
+
+        if is_total_row:
+            cell.set_facecolor('#f1c232')  # Yellow total row
+            cell.set_text_props(weight='bold', fontsize=10)
+            cell.get_text().set_fontproperties(aptos_font)
+            continue
+        if is_header:
+            cell.set_facecolor('#073763')  # Dark blue header
+            cell.set_text_props(weight='bold', color='white', fontsize=10)
+            cell.get_text().set_fontproperties(aptos_font)
+            continue
+        if is_first_col:
+            cell.set_facecolor('#ffffff')
+            cell.set_text_props(weight='bold', fontsize=10)
+            cell.get_text().set_fontproperties(aptos_font)
+            continue
+
+        # diagonal highlight (same party row & col)
+        row_party = data[row_idx][0]
+        col_party = data[0][col_idx]
+        if row_party == col_party:
+            cell.set_facecolor('#d9d9d9')  # Grey diagonal
+            cell.set_text_props(weight='bold', fontsize=10)
+            cell.get_text().set_fontproperties(aptos_font)
+        else:
+            cell.set_facecolor('white')
+            cell.set_text_props(fontsize=10)
+            cell.get_text().set_fontproperties(aptos_font)
+
+    table2.auto_set_font_size(False)
+    table2.scale(1.08, 2.0)
+    table2.set_fontsize(11)
+
+    # === Side Label (2022 Assembly Election) ===
+    fig.text(
+        0.071, 0.480, '                               2022 ASSEMBLY ELECTION                               ',
+        fontsize=12, fontproperties=bold_font,
+        va='center', ha='center', rotation=90,
+        bbox=dict(facecolor='#e4dfec', edgecolor='black', boxstyle='square,pad=0.9')
+    )
+
+    # === Top Banner (CURRENT TREND) ===
+    table_x_start = 0.0905
+    table_x_end = table_x_start + sum(table_col_widths)
+    swing_table_top = 0.78  # moved higher so it sits above the table
+
+    fig.patches.extend([
+        Rectangle(
+            (table_x_start, swing_table_top - 0.092),
+            0.892,  # full width
+            0.030,  # banner height
+            transform=fig.transFigure,
+            facecolor='#d9e1f2',
+            edgecolor='black',
+            linewidth=1,
+            zorder=1
+        )
+    ])
+
+    fig.text(
+        (table_x_start + table_x_end) / 2,
+        swing_table_top - 0.078,
+        '                                      CURRENT TREND',
+        fontsize=12, fontproperties=bold_font,
+        ha='center',
+        va='center',
+        zorder=2
+    )
+
+    return fig
+
+
+# ---------------- HELPER: SPACING ----------------
+# ---------------- HELPER: SPACING ----------------
 def add_table_section(fig):
-    st.markdown("<br><br>", unsafe_allow_html=True)
+    st.markdown("<br>", unsafe_allow_html=True)   # just one break instead of <br><br>
     st.pyplot(fig)
-    st.markdown("<br><br>", unsafe_allow_html=True)
+    st.markdown("<br>", unsafe_allow_html=True)
+
 
 # ---------------- UI LAYOUT ----------------
 # Red header
@@ -146,7 +310,6 @@ st.markdown(
 # Filters
 col1, col2, col3 = st.columns([2, 6, 2])
 
-# Min/max date with exclusions
 df_dates = run_query(
     "SELECT MIN(\"Date\") as min_date, MAX(\"Date\") as max_date "
     "FROM \"PUNJAB_2025\".\"CP_SURVEY_14_JULY\" "
@@ -193,7 +356,8 @@ with col3:
 if constituency == "All":
     df = run_query(
         "SELECT \"Date\", \"What is the name of your constituency?\", "
-        "\"If elections were held in Punjab today, which party would you v\" "
+        "\"If elections were held in Punjab today, which party would you v\", "
+        "\" Which party did you vote for in the previous 2022 elections? \" "
         "FROM \"PUNJAB_2025\".\"CP_SURVEY_14_JULY\" "
         "WHERE \"Date\" BETWEEN :start_date AND :end_date "
         "AND \"What is the name of your constituency?\" NOT IN "
@@ -203,7 +367,8 @@ if constituency == "All":
 else:
     df = run_query(
         "SELECT \"Date\", \"What is the name of your constituency?\", "
-        "\"If elections were held in Punjab today, which party would you v\" "
+        "\"If elections were held in Punjab today, which party would you v\", "
+        "\" Which party did you vote for in the previous 2022 elections? \" "
         "FROM \"PUNJAB_2025\".\"CP_SURVEY_14_JULY\" "
         "WHERE \"Date\" BETWEEN :start_date AND :end_date "
         "AND \"What is the name of your constituency?\" = :const "
@@ -212,14 +377,10 @@ else:
         params={"start_date": start_date, "end_date": end_date, "const": constituency}
     )
 
-# ---------------- PARTY PREF TABLE + SAMPLE SIZE ----------------
+# ---------------- TABLES ----------------
 if not df.empty:
     party_pref_table = get_party_preference_table(df)
-
-    # ✅ sample size = TOTAL row from table
-    sample_size = int(
-        party_pref_table.loc[party_pref_table["PARTY PREFERENCE"] == "TOTAL", "COUNT"].values[0]
-    )
+    sample_size = int(party_pref_table.loc[party_pref_table["PARTY PREFERENCE"] == "TOTAL", "COUNT"].values[0])
 
     st.markdown(
         f'<div style="background-color:#a0a0a0; padding:8px; text-align:center; '
@@ -228,7 +389,21 @@ if not df.empty:
         unsafe_allow_html=True
     )
 
+    # --- Keep proper gap after Sample Size ---
+    st.markdown("<div style='height:25px;'></div>", unsafe_allow_html=True)
+
+    # Table 1
     fig1 = plot_party_table(party_pref_table)
-    add_table_section(fig1)
+    st.pyplot(fig1)
+
+    # --- Small gap only between Table 1 and 2 ---
+    st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
+
+    # Table 2
+    data, pivot_data, row_order, col_order = get_voter_swing_matrix(df)
+    fig2 = plot_voter_swing_matrix(data, pivot_data, col_order)
+    st.pyplot(fig2)
+
+
 else:
     st.warning("No data available for the selected filters.")
