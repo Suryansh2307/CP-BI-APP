@@ -40,7 +40,13 @@ def get_party_preference_table(df):
 
     colname = 'If elections were held in Punjab today, which party would you v'
 
-    df[colname] = df[colname].replace(vote_map).fillna('Null').astype(str).str.strip()
+    df[colname] = (
+        df[colname]
+        .replace(vote_map)
+        .fillna("Other")   # treat blanks as Other
+        .astype(str)
+        .str.strip()
+    )
 
     party_order = ['AAP', 'INC', 'BJP', 'SAD (B)', 'SAD (A)', 
                    'BSP', 'Akali Dal (WPD)', 'NOTA', 'Other', "Can't Say"]
@@ -63,7 +69,6 @@ def get_party_preference_table(df):
 
 # ---------------- PLOT TABLE HELPER ----------------
 def plot_party_table(party_pref_table):
-    # Fonts (make sure Aptos TTF files are in repo)
     bold_font = fm.FontProperties(fname="Aptos-Display-Bold.ttf")
     aptos_font = fm.FontProperties(fname="Aptos-Display.ttf")
 
@@ -125,20 +130,28 @@ def plot_party_table(party_pref_table):
 
 # ---------------- HELPER: WRAPPER FOR TABLE SECTIONS ----------------
 def add_table_section(fig):
-    """Ensures spacing before and after each table."""
-    st.markdown("<br><br>", unsafe_allow_html=True)  # space before
+    st.markdown("<br><br>", unsafe_allow_html=True)
     st.pyplot(fig)
-    st.markdown("<br><br>", unsafe_allow_html=True)  # space after
+    st.markdown("<br><br>", unsafe_allow_html=True)
 
-# ---------------- UI LAYOUT (your original top sections) ----------------
+# ---------------- UI LAYOUT ----------------
 # Red header
-st.markdown('<div style="background-color:#e74c3c; padding:12px; text-align:center; color:white; font-size:22px; font-weight:bold; border-radius:5px;">PRIMARY INTELLIGENCE AND DISCOVERY INTERFACE CATI</div>', unsafe_allow_html=True)
+st.markdown(
+    '<div style="background-color:#e74c3c; padding:12px; text-align:center; '
+    'color:white; font-size:22px; font-weight:bold; border-radius:5px;">'
+    'PRIMARY INTELLIGENCE AND DISCOVERY INTERFACE CATI</div>',
+    unsafe_allow_html=True
+)
 
 # Filters
 col1, col2, col3 = st.columns([2, 6, 2])
 
+# Min/max date with exclusions
 df_dates = run_query(
-    'SELECT MIN("Date") as min_date, MAX("Date") as max_date FROM "PUNJAB_2025"."CP_SURVEY_14_JULY";'
+    "SELECT MIN(\"Date\") as min_date, MAX(\"Date\") as max_date "
+    "FROM \"PUNJAB_2025\".\"CP_SURVEY_14_JULY\" "
+    "WHERE \"What is the name of your constituency?\" NOT IN "
+    "('Call Disconnected','Don''t Know','','OUT of Assembly/ OUT of State');"
 )
 min_date = pd.to_datetime(df_dates["min_date"].iloc[0]).date()
 max_date = pd.to_datetime(df_dates["max_date"].iloc[0]).date()
@@ -148,59 +161,73 @@ with col1:
     start_date, end_date = date_range if len(date_range) == 2 else (min_date, max_date)
 
 with col2:
-    st.markdown('<div style="background-color:#0077c8; padding:10px; margin-top:24px; text-align:center; color:white; font-size:18px; font-weight:bold; border-radius:5px;">STATE LEVEL</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div style="background-color:#0077c8; padding:10px; margin-top:24px; '
+        'text-align:center; color:white; font-size:18px; font-weight:bold; border-radius:5px;">'
+        'STATE LEVEL</div>',
+        unsafe_allow_html=True
+    )
 
 with col3:
     df_const = run_query(
-        'SELECT DISTINCT "What is the name of your constituency?" '
-        'FROM "PUNJAB_2025"."CP_SURVEY_14_JULY" '
-        'WHERE "Date" BETWEEN :start_date AND :end_date '
-        'ORDER BY "What is the name of your constituency?";',
+        "SELECT DISTINCT \"What is the name of your constituency?\" as const "
+        "FROM \"PUNJAB_2025\".\"CP_SURVEY_14_JULY\" "
+        "WHERE \"Date\" BETWEEN :start_date AND :end_date "
+        "AND \"What is the name of your constituency?\" NOT IN "
+        "('Call Disconnected','Don''t Know','','OUT of Assembly/ OUT of State');",
         params={"start_date": start_date, "end_date": end_date}
     )
-    const_list = df_const['What is the name of your constituency?'].tolist()
-    const_list.insert(0, "All")   # Add All option
+
+    const_list = (
+        df_const["const"]
+        .dropna()
+        .astype(str)
+        .str.strip()
+        .tolist()
+    )
+
+    const_list.insert(0, "All")
     constituency = st.selectbox("Constituency", const_list)
 
-# Sample size bar
-if constituency == "All":
-    df_sample = run_query(
-        'SELECT COUNT(*) as sample_size FROM "PUNJAB_2025"."CP_SURVEY_14_JULY" '
-        'WHERE "Date" BETWEEN :start_date AND :end_date;',
-        params={"start_date": start_date, "end_date": end_date}
-    )
-else:
-    df_sample = run_query(
-        'SELECT COUNT(*) as sample_size FROM "PUNJAB_2025"."CP_SURVEY_14_JULY" '
-        'WHERE "Date" BETWEEN :start_date AND :end_date '
-        'AND "What is the name of your constituency?" = :const;',
-        params={"start_date": start_date, "end_date": end_date, "const": constituency}
-    )
-
-sample_size = int(df_sample["sample_size"].iloc[0])
-st.markdown(f'<div style="background-color:#a0a0a0; padding:8px; text-align:center; color:white; font-size:16px; font-weight:bold; border-radius:5px;">SAMPLE SIZE: {sample_size:,}</div>', unsafe_allow_html=True)
-
-# ---------------- MAIN TABLES BELOW ----------------
+# ---------------- MAIN DATA QUERY ----------------
 if constituency == "All":
     df = run_query(
-        'SELECT "Date", "What is the name of your constituency?", '
-        '"If elections were held in Punjab today, which party would you v" '
-        'FROM "PUNJAB_2025"."CP_SURVEY_14_JULY" '
-        'WHERE "Date" BETWEEN :start_date AND :end_date;',
+        "SELECT \"Date\", \"What is the name of your constituency?\", "
+        "\"If elections were held in Punjab today, which party would you v\" "
+        "FROM \"PUNJAB_2025\".\"CP_SURVEY_14_JULY\" "
+        "WHERE \"Date\" BETWEEN :start_date AND :end_date "
+        "AND \"What is the name of your constituency?\" NOT IN "
+        "('Call Disconnected','Don''t Know','','OUT of Assembly/ OUT of State');",
         params={"start_date": start_date, "end_date": end_date}
     )
 else:
     df = run_query(
-        'SELECT "Date", "What is the name of your constituency?", '
-        '"If elections were held in Punjab today, which party would you v" '
-        'FROM "PUNJAB_2025"."CP_SURVEY_14_JULY" '
-        'WHERE "Date" BETWEEN :start_date AND :end_date '
-        'AND "What is the name of your constituency?" = :const;',
+        "SELECT \"Date\", \"What is the name of your constituency?\", "
+        "\"If elections were held in Punjab today, which party would you v\" "
+        "FROM \"PUNJAB_2025\".\"CP_SURVEY_14_JULY\" "
+        "WHERE \"Date\" BETWEEN :start_date AND :end_date "
+        "AND \"What is the name of your constituency?\" = :const "
+        "AND \"What is the name of your constituency?\" NOT IN "
+        "('Call Disconnected','Don''t Know','','OUT of Assembly/ OUT of State');",
         params={"start_date": start_date, "end_date": end_date, "const": constituency}
     )
 
+# ---------------- PARTY PREF TABLE + SAMPLE SIZE ----------------
 if not df.empty:
     party_pref_table = get_party_preference_table(df)
+
+    # ✅ sample size = TOTAL row from table
+    sample_size = int(
+        party_pref_table.loc[party_pref_table["PARTY PREFERENCE"] == "TOTAL", "COUNT"].values[0]
+    )
+
+    st.markdown(
+        f'<div style="background-color:#a0a0a0; padding:8px; text-align:center; '
+        f'color:white; font-size:16px; font-weight:bold; border-radius:5px;">'
+        f'SAMPLE SIZE: {sample_size:,}</div>',
+        unsafe_allow_html=True
+    )
+
     fig1 = plot_party_table(party_pref_table)
     add_table_section(fig1)
 else:
