@@ -76,7 +76,7 @@ def plot_party_table(party_pref_table):
     total_color = '#f1c232'
     border_color = '#000000'
 
-    fig = plt.figure(figsize=(8, 5))
+    fig = plt.figure(figsize=(8, 3))
     ax = fig.add_axes([0.05, 0.2, 0.9, 0.7])
     ax.axis('off')
 
@@ -291,11 +291,6 @@ def plot_voter_swing_matrix(data, pivot_data, col_order):
 
 
 # ---------------- HELPER: SPACING ----------------
-# ---------------- HELPER: SPACING ----------------
-def add_table_section(fig):
-    st.markdown("<br>", unsafe_allow_html=True)   # just one break instead of <br><br>
-    st.pyplot(fig)
-    st.markdown("<br>", unsafe_allow_html=True)
 
 
 # ---------------- UI LAYOUT ----------------
@@ -390,14 +385,14 @@ if not df.empty:
     )
 
     # --- Keep proper gap after Sample Size ---
-    st.markdown("<div style='height:25px;'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height:15px;'></div>", unsafe_allow_html=True)
 
     # Table 1
     fig1 = plot_party_table(party_pref_table)
     st.pyplot(fig1)
 
     # --- Small gap only between Table 1 and 2 ---
-    st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
+    
 
     # Table 2
     data, pivot_data, row_order, col_order = get_voter_swing_matrix(df)
