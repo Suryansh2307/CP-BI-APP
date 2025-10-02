@@ -4,6 +4,18 @@ from sqlalchemy import create_engine, text
 import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
 from matplotlib.patches import Rectangle
+import decimal
+from difflib import SequenceMatcher
+
+# ---------------- HELPER ----------------
+def clean_constituency(val):
+    """Remove AC numbers or dashes, keep clean constituency name only"""
+    if pd.isnull(val):
+        return ""
+    val = str(val).strip()
+    if "-" in val:
+        val = val.split("-")[0].strip()
+    return val
 
 # ---------------- STREAMLIT CONFIG ----------------
 st.set_page_config(page_title="Client Dashboard", layout="wide")
@@ -23,6 +35,20 @@ def run_query(query, params=None):
     engine = init_engine()
     with engine.connect() as conn:
         return pd.read_sql(text(query), conn, params=params)
+
+# -------------------------------------------------
+# YOUR EXISTING FUNCTIONS (Tables 1–7, Demographics, etc.)
+# -------------------------------------------------
+# NOTE: I won’t rewrite them line-by-line here since they are exactly what you already pasted.
+# Just keep them as in your original script: 
+# - get_party_preference_table / plot_party_table
+# - get_voter_swing_matrix / plot_voter_swing_matrix
+# - get_mla_change_table / plot_mla_change_table
+# - get_social_media_table / plot_social_media_table
+# - get_mla_party_recall / plot_mla_party_tables
+# - get_whatsapp_usage / plot_whatsapp_table
+# - get_demo_party_table / plot_demo_party_table
+# -------------------------------------------------
 
 # ---------------- PARTY PREF TABLE (Table 1) ----------------
 def get_party_preference_table(df):
@@ -859,13 +885,7 @@ def plot_demo_party_table(table, section_title, sub_title, sort_by_sample=False)
 
     return fig
 
-
-
-# ---------------- HELPER: SPACING ----------------
-
-
 # ---------------- UI LAYOUT ----------------
-# Red header
 st.markdown(
     '<div style="background-color:#e74c3c; padding:12px; text-align:center; '
     'color:white; font-size:22px; font-weight:bold; border-radius:5px;">'
@@ -873,9 +893,9 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# Filters
 col1, col2, col3 = st.columns([2, 6, 2])
 
+# --- Date Range ---
 df_dates = run_query(
     "SELECT MIN(\"Date\") as min_date, MAX(\"Date\") as max_date "
     "FROM \"PUNJAB_2025\".\"CP_SURVEY_14_JULY\" "
@@ -897,6 +917,7 @@ with col2:
         unsafe_allow_html=True
     )
 
+# --- Constituency Dropdown ---
 with col3:
     df_const = run_query(
         "SELECT DISTINCT \"What is the name of your constituency?\" as const "
@@ -907,18 +928,15 @@ with col3:
         params={"start_date": start_date, "end_date": end_date}
     )
 
-    const_list = (
-        df_const["const"]
-        .dropna()
-        .astype(str)
-        .str.strip()
-        .tolist()
-    )
+    const_map = {
+        clean_constituency(x): x
+        for x in df_const["const"].dropna().astype(str).str.strip().tolist()
+    }
 
+    const_list = sorted(const_map.keys())
     const_list.insert(0, "All")
     constituency = st.selectbox("Constituency", const_list)
 
-# ---------------- MAIN DATA QUERY ----------------
 # ---------------- MAIN DATA QUERY ----------------
 if constituency == "All":
     df = run_query(
@@ -945,6 +963,7 @@ if constituency == "All":
         params={"start_date": start_date, "end_date": end_date}
     )
 else:
+    original_const = const_map[constituency]
     df = run_query(
         "SELECT \"Date\", "
         "\"What is the name of your constituency?\", "
@@ -967,11 +986,8 @@ else:
         "AND \"What is the name of your constituency?\" = :const "
         "AND \"What is the name of your constituency?\" NOT IN "
         "('Call Disconnected','Don''Know','','OUT of Assembly/ OUT of State');",
-        params={"start_date": start_date, "end_date": end_date, "const": constituency}
+        params={"start_date": start_date, "end_date": end_date, "const": original_const}
     )
-
-
-
 
 # ---------------- TABLES ----------------
 if not df.empty:
@@ -985,72 +1001,97 @@ if not df.empty:
         unsafe_allow_html=True
     )
 
-    # --- Keep proper gap after Sample Size ---
     st.markdown("<div style='height:15px;'></div>", unsafe_allow_html=True)
 
-    # Table 1
-    fig1 = plot_party_table(party_pref_table)
-    st.pyplot(fig1)
+    # --- Grey MLA header ---
+    # --- Grey MLA header ---
+    if constituency != "All":
+        ac_name_clean = constituency.upper()
+        mla_df = pd.read_excel("MLALIST2.xlsx")
+        mla_df.columns = mla_df.columns.str.strip()
+        mla_df.rename(columns={
+            'AC NAME': 'Constituency',
+            '1. Who is your MLA ?': 'MLA_NAME',
+            '2. MLA belongs to which party ?': 'MLA_PARTY'
+        }, inplace=True)
 
-    # --- Small gap only between Table 1 and 2 ---
-    
+        mla_info = mla_df[mla_df['Constituency'].str.strip().str.lower() == ac_name_clean.lower()]
+        if not mla_info.empty:
+            mla_name = mla_info['MLA_NAME'].values[0].strip()
+            mla_party = mla_info['MLA_PARTY'].values[0].strip()
+        else:
+            mla_name, mla_party = "NA", "NA"
 
-    # Table 2
+        # ✅ Party short names mapping (same as Table 1)
+        party_map = {
+            'Aam Aadmi Party (AAP)': 'AAP',
+            'Akali Dal (Waris Punjab De)': 'Akali Dal (WPD)',
+            'Bahujan Samaj Party (BSP)': 'BSP',
+            'Bharatiya Janata Party (BJP)': 'BJP',
+            'Congress': 'INC',
+            'Shiromani Akali Dal (Amritsar)': 'SAD (A)',
+            'Shiromani Akali Dal (Badal)': 'SAD (B)',
+            'NOTA': 'NOTA',
+            'Other': 'Other',
+            "Can't Say": "Can't Say"
+        }
+        mla_party_short = party_map.get(mla_party, mla_party)
+
+        st.markdown(
+            f'<div style="background-color:#7f8c8d; padding:8px; text-align:center; '
+            f'color:white; font-size:16px; font-weight:bold; border-radius:5px;">'
+            f'{ac_name_clean} — {mla_name} ({mla_party_short})</div>',
+            unsafe_allow_html=True
+        )
+
+        # ✅ Add extra spacing before Table 1
+        st.markdown("<div style='height:25px;'></div>", unsafe_allow_html=True)
+
+
+    # ---- TABLE 1 ----
+    st.pyplot(plot_party_table(party_pref_table))
+
+    # ---- TABLE 2 ----
     data, pivot_data, row_order, col_order = get_voter_swing_matrix(df)
-    fig2 = plot_voter_swing_matrix(data, pivot_data, col_order)
-    st.pyplot(fig2)
-    
-    # Table 3
+    st.pyplot(plot_voter_swing_matrix(data, pivot_data, col_order))
+
+    # ---- TABLE 3 ----
     mla_counts = get_mla_change_table(df)
-    fig3 = plot_mla_change_table(mla_counts)
-    st.pyplot(fig3)
-    
-    # Table 4
+    st.pyplot(plot_mla_change_table(mla_counts))
+
+    # ---- TABLE 4 ----
     social_counts_display = get_social_media_table(df)
-    fig4 = plot_social_media_table(social_counts_display)
-    st.pyplot(fig4)
+    st.pyplot(plot_social_media_table(social_counts_display))
 
-    # Load MLA list Excel once
+    # ---- TABLE 5 + 6 ----
     mla_df = pd.read_excel("MLALIST2.xlsx")
-
-    # Get recall summaries
     mla_summary, partymap_summary = get_mla_party_recall(df, mla_df)
-
-    # Plot & show
     fig5, fig6 = plot_mla_party_tables(mla_summary, partymap_summary)
     st.pyplot(fig5)
     st.pyplot(fig6)
-    
-    # Table 7
+
+    # ---- TABLE 7 ----
     whatsapp_summary = get_whatsapp_usage(df)
-    fig7 = plot_whatsapp_table(whatsapp_summary)
-    st.pyplot(fig7)
-    
-    # Gender table (no sorting needed)
+    st.pyplot(plot_whatsapp_table(whatsapp_summary))
+
+    # ---- DEMOGRAPHIC TABLES ----
     gender_table = get_demo_party_table(df, "Gender", "GENDER", sort_by_sample=False)
     st.pyplot(plot_demo_party_table(gender_table, "", "A. GENDER WISE PARTY PREFERENCE"))
 
-    # Age group table (no sorting needed)
     age_table = get_demo_party_table(df, "Age group", "AGE GROUP", sort_by_sample=False)
     st.pyplot(plot_demo_party_table(age_table, "", "B. AGE GROUP WISE PARTY PREFERENCE"))
 
-    # Religion table (sorting by sample size in descending order)
     religion_table = get_demo_party_table(df, "Which religion do you belong to?", "RELIGION", sort_by_sample=True)
     st.pyplot(plot_demo_party_table(religion_table, "", "C. RELIGION WISE VOTE SHARE"))
 
-    # Caste table (sorting by sample size in descending order)
     caste_table = get_demo_party_table(df, "What is your caste?", "CASTE CATEGORY", sort_by_sample=True)
     st.pyplot(plot_demo_party_table(caste_table, "", "D. CASTE CATEGORY WISE VOTE SHARE"))
 
-    # City/Village table (sorting by sample size in descending order)
     city_table = get_demo_party_table(df, "Do you live in a village or a city?", "AREA", sort_by_sample=True)
     st.pyplot(plot_demo_party_table(city_table, "", "E. CITY/VILLAGE WISE VOTE SHARE"))
 
-    # Occupation table (sorting by sample size in descending order)
     occupation_table = get_demo_party_table(df, "What work do you do?", "OCCUPATION", sort_by_sample=True)
     st.pyplot(plot_demo_party_table(occupation_table, "", "F. OCCUPATION WISE VOTE SHARE"))
-
-
 
 else:
     st.warning("No data available for the selected filters.")
