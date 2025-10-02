@@ -6,6 +6,15 @@ import matplotlib.font_manager as fm
 from matplotlib.patches import Rectangle
 import decimal
 from difflib import SequenceMatcher
+# Hide Streamlit style (footer, menu, "Made with Streamlit" etc.)
+hide_streamlit_style = """
+    <style>
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    </style>
+"""
+st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
 # ---------------- HELPER ----------------
 def clean_constituency(val):
