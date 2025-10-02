@@ -438,7 +438,7 @@ def plot_social_media_table(social_counts_display):
     header_color = '#073763'
     border_color = '#000000'
 
-    fig = plt.figure(figsize=(6, 2.5))
+    fig = plt.figure(figsize=(6, 1.5))
     ax = fig.add_axes([0.05, 0.2, 0.9, 0.7])
     ax.axis('off')
 
@@ -478,6 +478,183 @@ def plot_social_media_table(social_counts_display):
     table.scale(1.0, 1.3)
 
     return fig
+
+
+
+from difflib import SequenceMatcher
+
+def get_mla_party_recall(df, mla_df):
+    # --- Clean columns ---
+    def clean_columns(df):
+        df.columns = df.columns.str.strip().str.replace('\n', '').str.replace('\r', '').str.replace('  ', ' ')
+        return df
+    
+    df = clean_columns(df)
+    mla_df = clean_columns(mla_df)
+
+    df.rename(columns={
+        'What is the name of your constituency?': 'Constituency',
+        'What is the name of your MLA?': 'MLA_Response',
+        'Which party does he/she belong to?': 'Party_Response'
+    }, inplace=True)
+
+    mla_df.rename(columns={
+        'AC NAME': 'Constituency',
+        '1. Who is your MLA ?': 'MLA_NAME',
+        '2. MLA belongs to which party ?': 'MLA_PARTY'
+    }, inplace=True)
+
+    # --- Constituency cleaning ---
+    def clean_constituency(val):
+        if pd.isnull(val): 
+            return val
+        val = str(val).strip()
+        if '-' in val:
+            val = val.split('-')[0].strip()
+        return val
+
+    df['Constituency_Clean'] = df['Constituency'].apply(clean_constituency).str.lower().str.strip()
+    mla_df['Constituency_Clean'] = mla_df['Constituency'].apply(clean_constituency).str.lower().str.strip()
+
+    # --- Name normalization ---
+    def normalize_name(name):
+        if pd.isnull(name) or name == '':
+            return ''
+        name = str(name).lower().strip()
+        prefixes = ['mr.', 'mrs.', 'ms.', 'dr.', 'prof.', 'capt.', 'col.', 'maj.', 'lt.']
+        suffixes = ['ji', 'sahib', 'saheb']
+        words = name.split()
+        if words and words[0].rstrip('.') in prefixes:
+            words = words[1:]
+        if words and words[-1] in suffixes:
+            words = words[:-1]
+        return ' '.join(words)
+
+    def name_similarity(name1, name2):
+        if not name1 or not name2:
+            return 0
+        return SequenceMatcher(None, name1, name2).ratio()
+
+    merged_df = pd.merge(
+        df,
+        mla_df[['Constituency_Clean', 'MLA_NAME', 'MLA_PARTY']],
+        on='Constituency_Clean',
+        how='left'
+    )
+
+    merged_df['MLA_Response_Normalized'] = merged_df['MLA_Response'].apply(normalize_name)
+    merged_df['MLA_NAME_Normalized'] = merged_df['MLA_NAME'].apply(normalize_name)
+
+    # --- MLA Recall Matching ---
+    def evaluate_mla_match(row):
+        response_name = row['MLA_Response_Normalized']
+        actual_name = row['MLA_NAME_Normalized']
+        if not response_name or response_name in ['', 'nan', 'call disconnected', "don't know", "can't say"]:
+            return 'NO RESPONSE'
+        if not actual_name:
+            return 'NO MLA DATA'
+        if response_name == actual_name:
+            return 'CORRECT'
+        return 'INCORRECT'
+
+    merged_df['MLA_Match_Status'] = merged_df.apply(evaluate_mla_match, axis=1)
+    valid_responses = merged_df[~merged_df['MLA_Match_Status'].isin(['NO MLA DATA','NO RESPONSE'])]
+
+    mla_summary = valid_responses['MLA_Match_Status'].value_counts().reset_index()
+    mla_summary.columns = ['RESPONSE', 'COUNT']
+    total_valid = mla_summary['COUNT'].sum()
+    mla_summary['PERCENTAGE'] = (mla_summary['COUNT'] / total_valid * 100).round(2).astype(str) + '%'
+    mla_summary = mla_summary[['RESPONSE','PERCENTAGE']].set_index('RESPONSE').reindex(['CORRECT','INCORRECT']).reset_index().dropna()
+
+    # --- Party Recall Matching ---
+    def normalize_party(name):
+        if pd.isnull(name) or name == '':
+            return ''
+        return str(name).lower().strip()
+
+    merged_df['Party_Response_Normalized'] = merged_df['Party_Response'].apply(normalize_party)
+    merged_df['MLA_PARTY_Normalized'] = merged_df['MLA_PARTY'].apply(normalize_party)
+
+    def evaluate_party_match(row):
+        response = row['Party_Response_Normalized']
+        actual = row['MLA_PARTY_Normalized']
+        if response in ['', 'nan', 'call disconnected', "can't say"]:
+            return 'NO RESPONSE'
+        if not actual:
+            return 'NO MLA DATA'
+        if response == actual or actual in response or response in actual:
+            return 'CORRECT'
+        return 'INCORRECT'
+
+    merged_df['Party_Match_Status'] = merged_df.apply(evaluate_party_match, axis=1)
+    party_valid = merged_df[~merged_df['Party_Match_Status'].isin(['NO MLA DATA','NO RESPONSE'])]
+
+    partymap_summary = party_valid['Party_Match_Status'].value_counts().reset_index()
+    partymap_summary.columns = ['RESPONSE','COUNT']
+    total_party_valid = partymap_summary['COUNT'].sum()
+    partymap_summary['PERCENTAGE'] = (partymap_summary['COUNT'] / total_party_valid * 100).round(2).astype(str) + '%'
+    partymap_summary = partymap_summary[['RESPONSE','PERCENTAGE']].set_index('RESPONSE').reindex(['CORRECT','INCORRECT']).reset_index().dropna()
+
+    return mla_summary, partymap_summary
+
+def plot_mla_party_tables(mla_summary, partymap_summary):
+    bold_font = fm.FontProperties(fname="Aptos-Display-Bold.ttf")
+    aptos_font = fm.FontProperties(fname="Aptos-Display.ttf")
+
+    header_color = '#073763'
+    border_color = '#000000'
+
+    # === MLA Recall (Table 5) ===
+    fig1 = plt.figure(figsize=(5,1))
+    ax1 = fig1.add_axes([0.05,0.2,0.9,0.7])
+    ax1.axis('off')
+    ax1.text(-0.03,1.05,"5) MLA RECALL: WHO IS YOUR MLA ?",fontsize=11,fontproperties=bold_font,ha='left')
+
+    table_data_5 = [mla_summary.columns.tolist()] + mla_summary.values.tolist()
+    table5 = ax1.table(cellText=table_data_5,cellLoc='center',loc='upper center',colWidths=[0.5,0.5])
+    for i in range(len(table_data_5)):
+        for j in range(2):
+            cell = table5[i,j]
+            cell.set_edgecolor(border_color)
+            if i==0:
+                cell.set_facecolor(header_color)
+                cell.set_text_props(weight='bold',color='white',fontsize=10)
+                cell.get_text().set_fontproperties(aptos_font)
+            else:
+                cell.set_facecolor('white')
+                cell.set_text_props(fontsize=9)
+                cell.get_text().set_fontproperties(aptos_font)
+    table5.auto_set_font_size(False)
+    table5.set_fontsize(11)
+    table5.scale(1.0,1.3)
+
+    # === MLA’s Party Recall (Table 6) ===
+    fig2 = plt.figure(figsize=(5,1))
+    ax2 = fig2.add_axes([0.05,0.2,0.9,0.7])
+    ax2.axis('off')
+    ax2.text(-0.03,1.05,"6) MLA’S PARTY RECALL",fontsize=11,fontproperties=bold_font,ha='left')
+
+    table_data_6 = [partymap_summary.columns.tolist()] + partymap_summary.values.tolist()
+    table6 = ax2.table(cellText=table_data_6,cellLoc='center',loc='upper center',colWidths=[0.5,0.5])
+    for i in range(len(table_data_6)):
+        for j in range(2):
+            cell = table6[i,j]
+            cell.set_edgecolor(border_color)
+            if i==0:
+                cell.set_facecolor(header_color)
+                cell.set_text_props(weight='bold',color='white',fontsize=10)
+                cell.get_text().set_fontproperties(aptos_font)
+            else:
+                cell.set_facecolor('white')
+                cell.set_text_props(fontsize=9)
+                cell.get_text().set_fontproperties(aptos_font)
+    table6.auto_set_font_size(False)
+    table6.set_fontsize(11)
+    table6.scale(1.0,1.3)
+
+    return fig1, fig2
+
+
 
 
 # ---------------- HELPER: SPACING ----------------
@@ -544,8 +721,10 @@ if constituency == "All":
         "\"What is the name of your constituency?\", "
         "\"If elections were held in Punjab today, which party would you v\", "
         "\" Which party did you vote for in the previous 2022 elections? \", "
-        "\"would you like to change your MLA this time?\", "   
-        "\"Which social media platform do you use the most?\" " 
+        "\"would you like to change your MLA this time?\", "
+        "\"Which social media platform do you use the most?\", "
+        "\"What is the name of your MLA?\", "
+        "\"Which party does he/she belong to?\" "
         "FROM \"PUNJAB_2025\".\"CP_SURVEY_14_JULY\" "
         "WHERE \"Date\" BETWEEN :start_date AND :end_date "
         "AND \"What is the name of your constituency?\" NOT IN "
@@ -558,8 +737,10 @@ else:
         "\"What is the name of your constituency?\", "
         "\"If elections were held in Punjab today, which party would you v\", "
         "\" Which party did you vote for in the previous 2022 elections? \", "
-        "\"would you like to change your MLA this time?\", "  
-        "\"Which social media platform do you use the most?\" " 
+        "\"would you like to change your MLA this time?\", "
+        "\"Which social media platform do you use the most?\", "
+        "\"What is the name of your MLA?\", "
+        "\"Which party does he/she belong to?\" "
         "FROM \"PUNJAB_2025\".\"CP_SURVEY_14_JULY\" "
         "WHERE \"Date\" BETWEEN :start_date AND :end_date "
         "AND \"What is the name of your constituency?\" = :const "
@@ -567,6 +748,7 @@ else:
         "('Call Disconnected','Don''t Know','','OUT of Assembly/ OUT of State');",
         params={"start_date": start_date, "end_date": end_date, "const": constituency}
     )
+
 
 
 # ---------------- TABLES ----------------
@@ -606,6 +788,16 @@ if not df.empty:
     fig4 = plot_social_media_table(social_counts_display)
     st.pyplot(fig4)
 
+    # Load MLA list Excel once
+    mla_df = pd.read_excel("MLALIST2.xlsx")
+
+    # Get recall summaries
+    mla_summary, partymap_summary = get_mla_party_recall(df, mla_df)
+
+    # Plot & show
+    fig5, fig6 = plot_mla_party_tables(mla_summary, partymap_summary)
+    st.pyplot(fig5)
+    st.pyplot(fig6)
 
 
 else:
