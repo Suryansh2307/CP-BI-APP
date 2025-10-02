@@ -290,6 +290,196 @@ def plot_voter_swing_matrix(data, pivot_data, col_order):
     return fig
 
 
+# ---------------- TABLE 3: MLA Change ----------------
+def get_mla_change_table(df):
+    mla_change_col = 'would you like to change your MLA this time?'
+
+    df_mla = df.copy()
+    df_mla = df_mla[df_mla[mla_change_col].str.upper() != 'CALL DISCONNECTED']
+
+    # Group and count
+    mla_counts = df_mla[mla_change_col].value_counts().reset_index()
+    mla_counts.columns = ['RESPONSE', 'COUNT']
+
+    # Calculate percentage
+    total_count = mla_counts['COUNT'].sum()
+    mla_counts['PERCENTAGE'] = (mla_counts['COUNT'] / total_count * 100).round(2).astype(str) + '%'
+
+    # Response order
+    response_order = [
+        'Yes',
+        'No',
+        'Our MLA is doing a good job',
+        'Other (please specify)',
+        "Can't Say"
+    ]
+    mla_counts['RESPONSE'] = pd.Categorical(mla_counts['RESPONSE'], categories=response_order, ordered=True)
+    mla_counts = mla_counts.sort_values('RESPONSE')
+
+    # Append total row
+    total_row = pd.DataFrame([{
+        'RESPONSE': 'TOTAL',
+        'COUNT': total_count,
+        'PERCENTAGE': '100.00%'
+    }])
+    mla_counts = pd.concat([mla_counts, total_row], ignore_index=True)
+
+    return mla_counts
+
+def plot_mla_change_table(mla_counts):
+    bold_font = fm.FontProperties(fname="Aptos-Display-Bold.ttf")
+    aptos_font = fm.FontProperties(fname="Aptos-Display.ttf")
+
+    header_color = '#073763'
+    total_color = '#f1c232'
+    border_color = '#000000'
+
+    fig = plt.figure(figsize=(7, 2))
+    ax = fig.add_axes([0.05, 0.2, 0.9, 0.7])
+    ax.axis('off')
+
+    ax.text(
+        -0.03, 1.05,
+        "3) WOULD YOU LIKE TO CHANGE YOUR MLA THIS TIME?",
+        fontsize=10, fontproperties=bold_font, ha='left'
+    )
+
+    table = ax.table(
+        cellText=mla_counts.values.tolist(),
+        colLabels=mla_counts.columns.tolist(),
+        cellLoc='center',
+        loc='upper center',
+        colWidths=[0.45, 0.25, 0.30]
+    )
+
+    n_rows = len(mla_counts) + 1
+    n_cols = len(mla_counts.columns)
+
+    for i in range(n_rows):
+        for j in range(n_cols):
+            cell = table[i, j]
+            cell.set_edgecolor(border_color)
+            if i == 0:  # Header
+                cell.set_facecolor(header_color)
+                cell.set_text_props(weight='bold', color='white', fontsize=10)
+                cell.get_text().set_fontproperties(aptos_font)
+            elif i == n_rows - 1:  # Total row
+                cell.set_facecolor(total_color)
+                cell.set_text_props(weight='bold', fontsize=9)
+                cell.get_text().set_fontproperties(aptos_font)
+            else:  # Data rows
+                cell.set_facecolor('white')
+                cell.set_text_props(fontsize=9)
+                cell.get_text().set_fontproperties(aptos_font)
+
+    table.auto_set_font_size(False)
+    table.set_fontsize(11)
+    table.scale(1.05, 1.3)
+
+    return fig
+    
+import decimal
+
+def excel_round(x, digits=2):
+    """Excel-style rounding: ROUND_HALF_UP instead of Python's bankers rounding"""
+    return float(decimal.Decimal(str(x)).quantize(
+        decimal.Decimal('1.' + '0'*digits), rounding=decimal.ROUND_HALF_UP
+    ))
+
+def get_social_media_table(df):
+    from collections import Counter
+    
+    social_col = 'Which social media platform do you use the most?'
+    
+    # Step 1: Copy DF
+    df_social = df.copy()
+    
+    # Step 2: Split comma-separated platforms into lists
+    df_social[social_col] = df_social[social_col].str.split(',')
+    
+    # Step 3: Explode into rows
+    df_social = df_social.explode(social_col)
+    
+    # Step 4: Clean whitespace
+    df_social[social_col] = df_social[social_col].str.strip()
+    
+    # Step 5: Remove invalids
+    df_social = df_social[
+        df_social[social_col].notna() &
+        (df_social[social_col].str.upper() != 'CALL DISCONNECTED') &
+        (df_social[social_col] != '')
+    ]
+    
+    # Step 5.1: Replace "Whatsapp" → "Others"
+    df_social[social_col] = df_social[social_col].replace(
+        to_replace=r'(?i)^whatsapp$', value='Others', regex=True
+    )
+    
+    # Step 6: Count mentions
+    platform_counts = df_social[social_col].value_counts().reset_index()
+    platform_counts.columns = ['RESPONSE', 'COUNT']
+    
+    # Step 7: Percentages (mention-based, sum = 100)
+    platform_counts['PERCENTAGE'] = (
+        platform_counts['COUNT'] / platform_counts['COUNT'].sum() * 100
+    ).round(2).astype(str) + '%'
+    
+    # Final display
+    social_counts_display = platform_counts[['RESPONSE', 'PERCENTAGE']]
+    
+    return social_counts_display
+
+
+
+def plot_social_media_table(social_counts_display):
+    bold_font = fm.FontProperties(fname="Aptos-Display-Bold.ttf")
+    aptos_font = fm.FontProperties(fname="Aptos-Display.ttf")
+
+    header_color = '#073763'
+    border_color = '#000000'
+
+    fig = plt.figure(figsize=(6, 2.5))
+    ax = fig.add_axes([0.05, 0.2, 0.9, 0.7])
+    ax.axis('off')
+
+    ax.text(
+        0.001, 1.05,
+        "4) SOCIAL MEDIA",
+        fontsize=10, fontproperties=bold_font, ha='left'
+    )
+
+    table_data = [social_counts_display.columns.tolist()] + social_counts_display.values.tolist()
+
+    table = ax.table(
+        cellText=table_data,
+        cellLoc='center',
+        loc='upper center',
+        colWidths=[0.6, 0.4]
+    )
+
+    n_rows = len(table_data)
+    n_cols = len(table_data[0])
+
+    for i in range(n_rows):
+        for j in range(n_cols):
+            cell = table[i, j]
+            cell.set_edgecolor(border_color)
+            if i == 0:  # Header
+                cell.set_facecolor(header_color)
+                cell.set_text_props(weight='bold', color='white', fontsize=10)
+                cell.get_text().set_fontproperties(aptos_font)
+            else:
+                cell.set_facecolor('white')
+                cell.set_text_props(fontsize=9)
+                cell.get_text().set_fontproperties(aptos_font)
+
+    table.auto_set_font_size(False)
+    table.set_fontsize(11)
+    table.scale(1.0, 1.3)
+
+    return fig
+
+
 # ---------------- HELPER: SPACING ----------------
 
 
@@ -350,9 +540,12 @@ with col3:
 # ---------------- MAIN DATA QUERY ----------------
 if constituency == "All":
     df = run_query(
-        "SELECT \"Date\", \"What is the name of your constituency?\", "
+        "SELECT \"Date\", "
+        "\"What is the name of your constituency?\", "
         "\"If elections were held in Punjab today, which party would you v\", "
-        "\" Which party did you vote for in the previous 2022 elections? \" "
+        "\" Which party did you vote for in the previous 2022 elections? \", "
+        "\"would you like to change your MLA this time?\", "   
+        "\"Which social media platform do you use the most?\" " 
         "FROM \"PUNJAB_2025\".\"CP_SURVEY_14_JULY\" "
         "WHERE \"Date\" BETWEEN :start_date AND :end_date "
         "AND \"What is the name of your constituency?\" NOT IN "
@@ -361,9 +554,12 @@ if constituency == "All":
     )
 else:
     df = run_query(
-        "SELECT \"Date\", \"What is the name of your constituency?\", "
+        "SELECT \"Date\", "
+        "\"What is the name of your constituency?\", "
         "\"If elections were held in Punjab today, which party would you v\", "
-        "\" Which party did you vote for in the previous 2022 elections? \" "
+        "\" Which party did you vote for in the previous 2022 elections? \", "
+        "\"would you like to change your MLA this time?\", "  
+        "\"Which social media platform do you use the most?\" " 
         "FROM \"PUNJAB_2025\".\"CP_SURVEY_14_JULY\" "
         "WHERE \"Date\" BETWEEN :start_date AND :end_date "
         "AND \"What is the name of your constituency?\" = :const "
@@ -371,6 +567,7 @@ else:
         "('Call Disconnected','Don''t Know','','OUT of Assembly/ OUT of State');",
         params={"start_date": start_date, "end_date": end_date, "const": constituency}
     )
+
 
 # ---------------- TABLES ----------------
 if not df.empty:
@@ -398,6 +595,17 @@ if not df.empty:
     data, pivot_data, row_order, col_order = get_voter_swing_matrix(df)
     fig2 = plot_voter_swing_matrix(data, pivot_data, col_order)
     st.pyplot(fig2)
+    
+    # Table 3
+    mla_counts = get_mla_change_table(df)
+    fig3 = plot_mla_change_table(mla_counts)
+    st.pyplot(fig3)
+    
+    # Table 4
+    social_counts_display = get_social_media_table(df)
+    fig4 = plot_social_media_table(social_counts_display)
+    st.pyplot(fig4)
+
 
 
 else:
