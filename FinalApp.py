@@ -721,7 +721,24 @@ def plot_whatsapp_table(whatsapp_summary):
     return fig
     
     
-def get_gender_wise_party_table(df):
+    
+def clean_demographic_data(df, columns_to_clean):
+    """
+    Clean the DataFrame by removing unwanted values such as 'Call Disconnected', null, and empty strings.
+    :param df: DataFrame to clean
+    :param columns_to_clean: List of columns to apply cleaning to
+    :return: Cleaned DataFrame
+    """
+    for col in columns_to_clean:
+        df = df[df[col].str.upper() != 'CALL DISCONNECTED']
+        df = df[df[col].notna()]
+        df = df[df[col] != '']
+    return df
+
+
+
+# ---------------- DEMOGRAPHICAL PARTY PREFERENCE (Reusable Function) ----------------
+def get_demo_party_table(df, group_col, group_label):
     vote_map = {
         'Aam Aadmi Party (AAP)': 'AAP',
         'Akali Dal (Waris Punjab De)': 'Akali Dal (WPD)',
@@ -736,81 +753,65 @@ def get_gender_wise_party_table(df):
     }
 
     colname = 'If elections were held in Punjab today, which party would you v'
-
-    # Standardize party column
     df[colname] = df[colname].replace(vote_map).fillna("Other").astype(str).str.strip()
 
-    # Clean Gender column
-    df['Gender'] = df['Gender'].fillna("").str.strip().str.title()
+    # Clean group column
+    df[group_col] = df[group_col].fillna("").astype(str).str.strip()
 
-    # Keep only Male / Female
-    df = df[df['Gender'].isin(['Male', 'Female'])]
+    # Clean the group column by removing variants of 'CALL DISCONNECTED', 'null', ''
+    df = df[~df[group_col].str.contains(r'(?i)call disconnected|^$|null|unknown', na=False)]
 
-    party_order = ['AAP', 'INC', 'BJP', 'SAD (B)', 'SAD (A)', 
+    party_order = ['AAP', 'INC', 'BJP', 'SAD (B)', 'SAD (A)',
                    'BSP', 'Akali Dal (WPD)', 'NOTA', 'Other', "Can't Say"]
 
     result = []
-    for gender, gdf in df.groupby('Gender'):
+    for group, gdf in df.groupby(group_col):
         counts = gdf[colname].value_counts()
         total = counts.sum()
 
-        row = {'GENDER': gender, 'SAMPLE': total}
+        row = {group_label: group, 'SAMPLE': total}
         for party in party_order:
             pct = counts.get(party, 0) / total * 100 if total > 0 else 0
             row[party] = f"{round(pct)}%"
         result.append(row)
 
-    gender_table = pd.DataFrame(result)
+    demo_table = pd.DataFrame(result)
+    demo_table = demo_table[[group_label, 'SAMPLE'] + party_order]
 
-    # Reorder columns
-    gender_table = gender_table[['GENDER', 'SAMPLE'] + party_order]
-
-    #  Force Male first, then Female
-    gender_table['GENDER'] = pd.Categorical(gender_table['GENDER'], categories=['Male', 'Female'], ordered=True)
-    gender_table = gender_table.sort_values('GENDER').reset_index(drop=True)
-
-    return gender_table
+    return demo_table
 
 
-    
-    
-def plot_gender_party_table(gender_table):
+
+def plot_demo_party_table(table, section_title, sub_title, sort_by_sample=False):
     bold_font = fm.FontProperties(fname="Aptos-Display-Bold.ttf")
     aptos_font = fm.FontProperties(fname="Aptos-Display.ttf")
 
     header_color = '#073763'
     border_color = '#000000'
 
-    fig = plt.figure(figsize=(10, 1.3))   #  slightly taller figure
-    ax = fig.add_axes([0.05, 0.4, 0.9, 0.7])  # lower the table to create space
+    # If sort_by_sample is True, sort the table based on sample size in descending order
+    if sort_by_sample:
+        table = table.sort_values(by='SAMPLE', ascending=False)
+
+    fig = plt.figure(figsize=(10, 1.3))
+    ax = fig.add_axes([0.05, 0.4, 0.9, 0.7])
     ax.axis('off')
 
-    # Section Heading
-    ax.text(
-        0.01, 1.32,   #  higher
-        "8. DEMOGRAPHICAL PREFERENCE OF PARTY",
-        fontsize=13, fontproperties=bold_font, ha='left'
-    )
+    # Section + Sub Title
+    ax.text(-0.027, 1.32, section_title, fontsize=13, fontproperties=bold_font, ha='left')
+    ax.text(-0.027, 1.10, sub_title, fontsize=11, fontproperties=bold_font, ha='left')
 
-    # Sub Heading (moved a bit lower, giving gap from section heading and table)
-    ax.text(
-        0.01, 1.10,   #  moved up from 0.9 → 1.15
-        "A. GENDER WISE PARTY PREFERENCE",
-        fontsize=11, fontproperties=bold_font, ha='left'
-    )
-
-    # Table
-    table_data = [gender_table.columns.tolist()] + gender_table.values.tolist()
-    table = ax.table(
+    table_data = [table.columns.tolist()] + table.values.tolist()
+    table_plot = ax.table(
         cellText=table_data,
         cellLoc='center',
         loc='upper center',
-        colWidths=[0.09, 0.08] + [0.07] * (len(gender_table.columns) - 2)
+        colWidths=[0.14, 0.09] + [0.07] * (len(table.columns) - 2)
     )
 
     for i in range(len(table_data)):
-        for j in range(len(gender_table.columns)):
-            cell = table[i, j]
+        for j in range(len(table.columns)):
+            cell = table_plot[i, j]
             cell.set_edgecolor(border_color)
             if i == 0:
                 cell.set_facecolor(header_color)
@@ -821,12 +822,11 @@ def plot_gender_party_table(gender_table):
                 cell.set_text_props(fontsize=9)
                 cell.get_text().set_fontproperties(aptos_font)
 
-    table.auto_set_font_size(False)
-    table.set_fontsize(10)
-    table.scale(1.13, 1.3)
+    table_plot.auto_set_font_size(False)
+    table_plot.set_fontsize(10)
+    table_plot.scale(1.13, 1.3)
 
     return fig
-
 
 
 
@@ -888,6 +888,7 @@ with col3:
     constituency = st.selectbox("Constituency", const_list)
 
 # ---------------- MAIN DATA QUERY ----------------
+# ---------------- MAIN DATA QUERY ----------------
 if constituency == "All":
     df = run_query(
         "SELECT \"Date\", "
@@ -899,7 +900,13 @@ if constituency == "All":
         "\"What is the name of your MLA?\", "
         "\"Which party does he/she belong to?\", "
         "\"Do you use WhatsApp?\", "
-        "\"Gender\" "  
+        "\"Gender\", "
+        "\"Age group\", "   
+        "\"Age\", "
+        "\"Which religion do you belong to?\", "
+        "\"What is your caste?\", "
+        "\"Do you live in a village or a city?\", "
+        "\"What work do you do?\" "
         "FROM \"PUNJAB_2025\".\"CP_SURVEY_14_JULY\" "
         "WHERE \"Date\" BETWEEN :start_date AND :end_date "
         "AND \"What is the name of your constituency?\" NOT IN "
@@ -917,7 +924,13 @@ else:
         "\"What is the name of your MLA?\", "
         "\"Which party does he/she belong to?\", "
         "\"Do you use WhatsApp?\", "
-        "\"Gender\" "  
+        "\"Gender\", "
+        "\"Age group\", "  
+        "\"Age\", "
+        "\"Which religion do you belong to?\", "
+        "\"What is your caste?\", "
+        "\"Do you live in a village or a city?\", "
+        "\"What work do you do?\" "
         "FROM \"PUNJAB_2025\".\"CP_SURVEY_14_JULY\" "
         "WHERE \"Date\" BETWEEN :start_date AND :end_date "
         "AND \"What is the name of your constituency?\" = :const "
@@ -982,12 +995,30 @@ if not df.empty:
     fig7 = plot_whatsapp_table(whatsapp_summary)
     st.pyplot(fig7)
     
-    # Table 8
-    gender_table = get_gender_wise_party_table(df)
-    fig8 = plot_gender_party_table(gender_table)
-    st.pyplot(fig8)
+    # Table 8A (Gender-wise already present)
+    gender_table = get_demo_party_table(df, "Gender", "GENDER")
+    st.pyplot(plot_demo_party_table(gender_table, "8. DEMOGRAPHICAL PREFERENCE OF PARTY", "A. GENDER WISE PARTY PREFERENCE"))
+
+    # Table 8B (Age group)
+    age_table = get_demo_party_table(df, "Age group", "AGE GROUP")
+    st.pyplot(plot_demo_party_table(age_table, "8. DEMOGRAPHICAL PREFERENCE OF PARTY", "B. AGE GROUP WISE PARTY PREFERENCE"))
 
 
+    # Table 8C (Religion)
+    religion_table = get_demo_party_table(df, "Which religion do you belong to?", "RELIGION")
+    st.pyplot(plot_demo_party_table(religion_table, "8. DEMOGRAPHICAL PREFERENCE OF PARTY", "C. RELIGION WISE VOTE SHARE",sort_by_sample=True))
+
+    # Table 8D (Caste)
+    caste_table = get_demo_party_table(df, "What is your caste?", "CASTE CATEGORY")
+    st.pyplot(plot_demo_party_table(caste_table, "8. DEMOGRAPHICAL PREFERENCE OF PARTY", "D. CASTE CATEGORY WISE VOTE SHARE",sort_by_sample=True))
+
+    # Table 8E (City/Village)
+    city_table = get_demo_party_table(df, "Do you live in a village or a city?", "AREA")
+    st.pyplot(plot_demo_party_table(city_table, "8. DEMOGRAPHICAL PREFERENCE OF PARTY", "E. CITY/VILLAGE WISE VOTE SHARE",sort_by_sample=True))
+
+    # Table 8F (Occupation)
+    occupation_table = get_demo_party_table(df, "What work do you do?", "OCCUPATION")
+    st.pyplot(plot_demo_party_table(occupation_table, "8. DEMOGRAPHICAL PREFERENCE OF PARTY", "F. OCCUPATION WISE VOTE SHARE",sort_by_sample=True))
 
 else:
     st.warning("No data available for the selected filters.")
