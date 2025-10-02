@@ -608,7 +608,7 @@ def plot_mla_party_tables(mla_summary, partymap_summary):
     fig1 = plt.figure(figsize=(5,1))
     ax1 = fig1.add_axes([0.05,0.2,0.9,0.7])
     ax1.axis('off')
-    ax1.text(-0.03,1.05,"5) MLA RECALL: WHO IS YOUR MLA ?",fontsize=11,fontproperties=bold_font,ha='left')
+    ax1.text(-0.099,1.05,"5) MLA RECALL: WHO IS YOUR MLA ?",fontsize=11,fontproperties=bold_font,ha='left')
 
     table_data_5 = [mla_summary.columns.tolist()] + mla_summary.values.tolist()
     table5 = ax1.table(cellText=table_data_5,cellLoc='center',loc='upper center',colWidths=[0.5,0.5])
@@ -626,13 +626,13 @@ def plot_mla_party_tables(mla_summary, partymap_summary):
                 cell.get_text().set_fontproperties(aptos_font)
     table5.auto_set_font_size(False)
     table5.set_fontsize(11)
-    table5.scale(1.0,1.3)
+    table5.scale(1.2,1.3)
 
     # === MLA’s Party Recall (Table 6) ===
     fig2 = plt.figure(figsize=(5,1))
     ax2 = fig2.add_axes([0.05,0.2,0.9,0.7])
     ax2.axis('off')
-    ax2.text(-0.03,1.05,"6) MLA’S PARTY RECALL",fontsize=11,fontproperties=bold_font,ha='left')
+    ax2.text(-0.099,1.05,"6) MLA’S PARTY RECALL",fontsize=11,fontproperties=bold_font,ha='left')
 
     table_data_6 = [partymap_summary.columns.tolist()] + partymap_summary.values.tolist()
     table6 = ax2.table(cellText=table_data_6,cellLoc='center',loc='upper center',colWidths=[0.5,0.5])
@@ -650,11 +650,75 @@ def plot_mla_party_tables(mla_summary, partymap_summary):
                 cell.get_text().set_fontproperties(aptos_font)
     table6.auto_set_font_size(False)
     table6.set_fontsize(11)
-    table6.scale(1.0,1.3)
+    table6.scale(1.2,1.3)
 
     return fig1, fig2
 
 
+def get_whatsapp_usage(df):
+    df = df.copy()
+    df.rename(columns={'Do you use WhatsApp?': 'WhatsApp'}, inplace=True)
+    df['WhatsApp'] = df['WhatsApp'].str.upper()
+
+    whatsapp_summary = (
+        df['WhatsApp']
+        .value_counts(normalize=True)
+        .mul(100)
+        .round(2)
+        .rename('PERCENTAGE')
+        .reset_index()
+    )
+
+    whatsapp_summary.columns = ['RESPONSE', 'PERCENTAGE']
+    whatsapp_summary['PERCENTAGE'] = whatsapp_summary['PERCENTAGE'].astype(str) + '%'
+
+    whatsapp_order = ['YES', 'NO']
+    whatsapp_summary = whatsapp_summary.set_index('RESPONSE').reindex(whatsapp_order).reset_index().dropna()
+
+    return whatsapp_summary
+def plot_whatsapp_table(whatsapp_summary):
+    bold_font = fm.FontProperties(fname="Aptos-Display-Bold.ttf")
+    aptos_font = fm.FontProperties(fname="Aptos-Display.ttf")
+
+    header_color = '#073763'
+    border_color = '#000000'
+
+    fig = plt.figure(figsize=(5,1))
+    ax = fig.add_axes([0.05,0.2,0.9,0.7])
+    ax.axis('off')
+
+    ax.text(
+        -0.099, 1.05,
+        "7) WHATSAPP USAGE",
+        fontsize=12, fontproperties=bold_font, ha='left'
+    )
+
+    table_data_7 = [whatsapp_summary.columns.tolist()] + whatsapp_summary.values.tolist()
+    table7 = ax.table(
+        cellText=table_data_7,
+        cellLoc='center',
+        loc='upper center',
+        colWidths=[0.5,0.5]
+    )
+
+    for i in range(len(table_data_7)):
+        for j in range(2):
+            cell = table7[i,j]
+            cell.set_edgecolor(border_color)
+            if i==0:
+                cell.set_facecolor(header_color)
+                cell.set_text_props(weight='bold', color='white', fontsize=10)
+                cell.get_text().set_fontproperties(aptos_font)
+            else:
+                cell.set_facecolor('white')
+                cell.set_text_props(fontsize=9)
+                cell.get_text().set_fontproperties(aptos_font)
+
+    table7.auto_set_font_size(False)
+    table7.set_fontsize(11)
+    table7.scale(1.2,1.3)
+
+    return fig
 
 
 # ---------------- HELPER: SPACING ----------------
@@ -724,11 +788,12 @@ if constituency == "All":
         "\"would you like to change your MLA this time?\", "
         "\"Which social media platform do you use the most?\", "
         "\"What is the name of your MLA?\", "
-        "\"Which party does he/she belong to?\" "
+        "\"Which party does he/she belong to?\", "
+        "\"Do you use WhatsApp?\" "  
         "FROM \"PUNJAB_2025\".\"CP_SURVEY_14_JULY\" "
         "WHERE \"Date\" BETWEEN :start_date AND :end_date "
         "AND \"What is the name of your constituency?\" NOT IN "
-        "('Call Disconnected','Don''t Know','','OUT of Assembly/ OUT of State');",
+        "('Call Disconnected','Don''Know','','OUT of Assembly/ OUT of State');",
         params={"start_date": start_date, "end_date": end_date}
     )
 else:
@@ -740,14 +805,16 @@ else:
         "\"would you like to change your MLA this time?\", "
         "\"Which social media platform do you use the most?\", "
         "\"What is the name of your MLA?\", "
-        "\"Which party does he/she belong to?\" "
+        "\"Which party does he/she belong to?\", "
+        "\"Do you use WhatsApp?\" "  
         "FROM \"PUNJAB_2025\".\"CP_SURVEY_14_JULY\" "
         "WHERE \"Date\" BETWEEN :start_date AND :end_date "
         "AND \"What is the name of your constituency?\" = :const "
         "AND \"What is the name of your constituency?\" NOT IN "
-        "('Call Disconnected','Don''t Know','','OUT of Assembly/ OUT of State');",
+        "('Call Disconnected','Don''Know','','OUT of Assembly/ OUT of State');",
         params={"start_date": start_date, "end_date": end_date, "const": constituency}
     )
+
 
 
 
@@ -798,6 +865,11 @@ if not df.empty:
     fig5, fig6 = plot_mla_party_tables(mla_summary, partymap_summary)
     st.pyplot(fig5)
     st.pyplot(fig6)
+    
+    # Table 7
+    whatsapp_summary = get_whatsapp_usage(df)
+    fig7 = plot_whatsapp_table(whatsapp_summary)
+    st.pyplot(fig7)
 
 
 else:
