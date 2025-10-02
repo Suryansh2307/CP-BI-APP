@@ -719,6 +719,115 @@ def plot_whatsapp_table(whatsapp_summary):
     table7.scale(1.2,1.3)
 
     return fig
+    
+    
+def get_gender_wise_party_table(df):
+    vote_map = {
+        'Aam Aadmi Party (AAP)': 'AAP',
+        'Akali Dal (Waris Punjab De)': 'Akali Dal (WPD)',
+        'Bahujan Samaj Party (BSP)': 'BSP',
+        'Bharatiya Janata Party (BJP)': 'BJP',
+        "Can't Say": "Can't Say",
+        'Congress': 'INC',
+        'NOTA': 'NOTA',
+        'Other': 'Other',
+        'Shiromani Akali Dal (Amritsar)': 'SAD (A)',
+        'Shiromani Akali Dal (Badal)': 'SAD (B)'
+    }
+
+    colname = 'If elections were held in Punjab today, which party would you v'
+
+    # Standardize party column
+    df[colname] = df[colname].replace(vote_map).fillna("Other").astype(str).str.strip()
+
+    # Clean Gender column
+    df['Gender'] = df['Gender'].fillna("").str.strip().str.title()
+
+    # Keep only Male / Female
+    df = df[df['Gender'].isin(['Male', 'Female'])]
+
+    party_order = ['AAP', 'INC', 'BJP', 'SAD (B)', 'SAD (A)', 
+                   'BSP', 'Akali Dal (WPD)', 'NOTA', 'Other', "Can't Say"]
+
+    result = []
+    for gender, gdf in df.groupby('Gender'):
+        counts = gdf[colname].value_counts()
+        total = counts.sum()
+
+        row = {'GENDER': gender, 'SAMPLE': total}
+        for party in party_order:
+            pct = counts.get(party, 0) / total * 100 if total > 0 else 0
+            row[party] = f"{round(pct)}%"
+        result.append(row)
+
+    gender_table = pd.DataFrame(result)
+
+    # Reorder columns
+    gender_table = gender_table[['GENDER', 'SAMPLE'] + party_order]
+
+    #  Force Male first, then Female
+    gender_table['GENDER'] = pd.Categorical(gender_table['GENDER'], categories=['Male', 'Female'], ordered=True)
+    gender_table = gender_table.sort_values('GENDER').reset_index(drop=True)
+
+    return gender_table
+
+
+    
+    
+def plot_gender_party_table(gender_table):
+    bold_font = fm.FontProperties(fname="Aptos-Display-Bold.ttf")
+    aptos_font = fm.FontProperties(fname="Aptos-Display.ttf")
+
+    header_color = '#073763'
+    border_color = '#000000'
+
+    fig = plt.figure(figsize=(10, 1.3))   #  slightly taller figure
+    ax = fig.add_axes([0.05, 0.4, 0.9, 0.7])  # lower the table to create space
+    ax.axis('off')
+
+    # Section Heading
+    ax.text(
+        0.01, 1.32,   #  higher
+        "8. DEMOGRAPHICAL PREFERENCE OF PARTY",
+        fontsize=13, fontproperties=bold_font, ha='left'
+    )
+
+    # Sub Heading (moved a bit lower, giving gap from section heading and table)
+    ax.text(
+        0.01, 1.10,   #  moved up from 0.9 → 1.15
+        "A. GENDER WISE PARTY PREFERENCE",
+        fontsize=11, fontproperties=bold_font, ha='left'
+    )
+
+    # Table
+    table_data = [gender_table.columns.tolist()] + gender_table.values.tolist()
+    table = ax.table(
+        cellText=table_data,
+        cellLoc='center',
+        loc='upper center',
+        colWidths=[0.09, 0.08] + [0.07] * (len(gender_table.columns) - 2)
+    )
+
+    for i in range(len(table_data)):
+        for j in range(len(gender_table.columns)):
+            cell = table[i, j]
+            cell.set_edgecolor(border_color)
+            if i == 0:
+                cell.set_facecolor(header_color)
+                cell.set_text_props(weight='bold', color='white', fontsize=9)
+                cell.get_text().set_fontproperties(aptos_font)
+            else:
+                cell.set_facecolor('white')
+                cell.set_text_props(fontsize=9)
+                cell.get_text().set_fontproperties(aptos_font)
+
+    table.auto_set_font_size(False)
+    table.set_fontsize(10)
+    table.scale(1.13, 1.3)
+
+    return fig
+
+
 
 
 # ---------------- HELPER: SPACING ----------------
@@ -789,7 +898,8 @@ if constituency == "All":
         "\"Which social media platform do you use the most?\", "
         "\"What is the name of your MLA?\", "
         "\"Which party does he/she belong to?\", "
-        "\"Do you use WhatsApp?\" "  
+        "\"Do you use WhatsApp?\", "
+        "\"Gender\" "  
         "FROM \"PUNJAB_2025\".\"CP_SURVEY_14_JULY\" "
         "WHERE \"Date\" BETWEEN :start_date AND :end_date "
         "AND \"What is the name of your constituency?\" NOT IN "
@@ -806,7 +916,8 @@ else:
         "\"Which social media platform do you use the most?\", "
         "\"What is the name of your MLA?\", "
         "\"Which party does he/she belong to?\", "
-        "\"Do you use WhatsApp?\" "  
+        "\"Do you use WhatsApp?\", "
+        "\"Gender\" "  
         "FROM \"PUNJAB_2025\".\"CP_SURVEY_14_JULY\" "
         "WHERE \"Date\" BETWEEN :start_date AND :end_date "
         "AND \"What is the name of your constituency?\" = :const "
@@ -870,6 +981,12 @@ if not df.empty:
     whatsapp_summary = get_whatsapp_usage(df)
     fig7 = plot_whatsapp_table(whatsapp_summary)
     st.pyplot(fig7)
+    
+    # Table 8
+    gender_table = get_gender_wise_party_table(df)
+    fig8 = plot_gender_party_table(gender_table)
+    st.pyplot(fig8)
+
 
 
 else:
