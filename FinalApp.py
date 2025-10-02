@@ -738,7 +738,7 @@ def clean_demographic_data(df, columns_to_clean):
 
 
 # ---------------- DEMOGRAPHICAL PARTY PREFERENCE (Reusable Function) ----------------
-def get_demo_party_table(df, group_col, group_label):
+def get_demo_party_table(df, group_col, group_label, sort_by_sample=False):
     vote_map = {
         'Aam Aadmi Party (AAP)': 'AAP',
         'Akali Dal (Waris Punjab De)': 'Akali Dal (WPD)',
@@ -778,7 +778,12 @@ def get_demo_party_table(df, group_col, group_label):
     demo_table = pd.DataFrame(result)
     demo_table = demo_table[[group_label, 'SAMPLE'] + party_order]
 
+    # Sort by sample size if needed
+    if sort_by_sample:
+        demo_table = demo_table.sort_values(by='SAMPLE', ascending=False)
+
     return demo_table
+
 
 
 
@@ -801,7 +806,33 @@ def plot_demo_party_table(table, section_title, sub_title, sort_by_sample=False)
     ax.text(-0.027, 1.32, section_title, fontsize=13, fontproperties=bold_font, ha='left')
     ax.text(-0.027, 1.10, sub_title, fontsize=11, fontproperties=bold_font, ha='left')
 
-    table_data = [table.columns.tolist()] + table.values.tolist()
+
+    # Function to wrap long column header text (specific ones like "Akali Dal (WPD)")
+    def wrap_header_text(label):
+        if label == "Akali Dal (WPD)":  # Only wrap this specific header
+            words = label.split()
+            line1 = ' '.join(words[:2])  # "Akali Dal"
+            line2 = ' '.join(words[2:])  # "(WPD)"
+            return line1 + '\n' + line2
+        return label
+
+    # Function to wrap specific cell values
+    def wrap_cell_text(value):
+        if value == "Does not follow any religion":  # Wrap specific cell value
+            words = value.split()
+            return words[0] + '\n' + ' '.join(words[1:])  # Wrap after first word
+        return value
+
+    # Apply wrap function to column headers
+    wrapped_columns = [wrap_header_text(col) for col in table.columns.tolist()]
+
+    # Prepare table data and apply wrapping to specific cell values
+    table_data = []
+    for row in table.values.tolist():
+        wrapped_row = [wrap_cell_text(val) for val in row]
+        table_data.append(wrapped_row)
+
+    table_data.insert(0, wrapped_columns)  # Insert wrapped column headers
     table_plot = ax.table(
         cellText=table_data,
         cellLoc='center',
@@ -824,7 +855,7 @@ def plot_demo_party_table(table, section_title, sub_title, sort_by_sample=False)
 
     table_plot.auto_set_font_size(False)
     table_plot.set_fontsize(10)
-    table_plot.scale(1.13, 1.3)
+    table_plot.scale(1.13, 1.6)
 
     return fig
 
@@ -995,30 +1026,31 @@ if not df.empty:
     fig7 = plot_whatsapp_table(whatsapp_summary)
     st.pyplot(fig7)
     
-    # Table 8A (Gender-wise already present)
-    gender_table = get_demo_party_table(df, "Gender", "GENDER")
-    st.pyplot(plot_demo_party_table(gender_table, "8. DEMOGRAPHICAL PREFERENCE OF PARTY", "A. GENDER WISE PARTY PREFERENCE"))
+    # Gender table (no sorting needed)
+    gender_table = get_demo_party_table(df, "Gender", "GENDER", sort_by_sample=False)
+    st.pyplot(plot_demo_party_table(gender_table, "", "A. GENDER WISE PARTY PREFERENCE"))
 
-    # Table 8B (Age group)
-    age_table = get_demo_party_table(df, "Age group", "AGE GROUP")
-    st.pyplot(plot_demo_party_table(age_table, "8. DEMOGRAPHICAL PREFERENCE OF PARTY", "B. AGE GROUP WISE PARTY PREFERENCE"))
+    # Age group table (no sorting needed)
+    age_table = get_demo_party_table(df, "Age group", "AGE GROUP", sort_by_sample=False)
+    st.pyplot(plot_demo_party_table(age_table, "", "B. AGE GROUP WISE PARTY PREFERENCE"))
+
+    # Religion table (sorting by sample size in descending order)
+    religion_table = get_demo_party_table(df, "Which religion do you belong to?", "RELIGION", sort_by_sample=True)
+    st.pyplot(plot_demo_party_table(religion_table, "", "C. RELIGION WISE VOTE SHARE"))
+
+    # Caste table (sorting by sample size in descending order)
+    caste_table = get_demo_party_table(df, "What is your caste?", "CASTE CATEGORY", sort_by_sample=True)
+    st.pyplot(plot_demo_party_table(caste_table, "", "D. CASTE CATEGORY WISE VOTE SHARE"))
+
+    # City/Village table (sorting by sample size in descending order)
+    city_table = get_demo_party_table(df, "Do you live in a village or a city?", "AREA", sort_by_sample=True)
+    st.pyplot(plot_demo_party_table(city_table, "", "E. CITY/VILLAGE WISE VOTE SHARE"))
+
+    # Occupation table (sorting by sample size in descending order)
+    occupation_table = get_demo_party_table(df, "What work do you do?", "OCCUPATION", sort_by_sample=True)
+    st.pyplot(plot_demo_party_table(occupation_table, "", "F. OCCUPATION WISE VOTE SHARE"))
 
 
-    # Table 8C (Religion)
-    religion_table = get_demo_party_table(df, "Which religion do you belong to?", "RELIGION")
-    st.pyplot(plot_demo_party_table(religion_table, "8. DEMOGRAPHICAL PREFERENCE OF PARTY", "C. RELIGION WISE VOTE SHARE",sort_by_sample=True))
-
-    # Table 8D (Caste)
-    caste_table = get_demo_party_table(df, "What is your caste?", "CASTE CATEGORY")
-    st.pyplot(plot_demo_party_table(caste_table, "8. DEMOGRAPHICAL PREFERENCE OF PARTY", "D. CASTE CATEGORY WISE VOTE SHARE",sort_by_sample=True))
-
-    # Table 8E (City/Village)
-    city_table = get_demo_party_table(df, "Do you live in a village or a city?", "AREA")
-    st.pyplot(plot_demo_party_table(city_table, "8. DEMOGRAPHICAL PREFERENCE OF PARTY", "E. CITY/VILLAGE WISE VOTE SHARE",sort_by_sample=True))
-
-    # Table 8F (Occupation)
-    occupation_table = get_demo_party_table(df, "What work do you do?", "OCCUPATION")
-    st.pyplot(plot_demo_party_table(occupation_table, "8. DEMOGRAPHICAL PREFERENCE OF PARTY", "F. OCCUPATION WISE VOTE SHARE",sort_by_sample=True))
 
 else:
     st.warning("No data available for the selected filters.")
