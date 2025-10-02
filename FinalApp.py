@@ -16,6 +16,17 @@ hide_streamlit_style = """
 """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
+
+
+def format_number(n):
+    """Format number with commas, e.g., 10000 -> 10,000"""
+    try:
+        return f"{int(n):,}"
+    except:
+        return n
+
+
+
 # ---------------- HELPER ----------------
 def clean_constituency(val):
     """Remove AC numbers or dashes, keep clean constituency name only"""
@@ -60,6 +71,7 @@ def run_query(query, params=None):
 # -------------------------------------------------
 
 # ---------------- PARTY PREF TABLE (Table 1) ----------------
+# ---------------- TABLE 1: PARTY PREF ----------------
 def get_party_preference_table(df):
     vote_map = {
         'Aam Aadmi Party (AAP)': 'AAP',
@@ -75,11 +87,10 @@ def get_party_preference_table(df):
     }
 
     colname = 'If elections were held in Punjab today, which party would you v'
-
     df[colname] = (
         df[colname]
         .replace(vote_map)
-        .fillna("Other")   # treat blanks as Other
+        .fillna("Other")
         .astype(str)
         .str.strip()
     )
@@ -121,37 +132,38 @@ def plot_party_table(party_pref_table):
         fontsize=12, fontproperties=bold_font, ha='left'
     )
 
+    # apply formatting only at display time
+    table_data = party_pref_table.copy()
+    table_data['COUNT'] = table_data['COUNT'].apply(format_number)
+
     table = ax.table(
-        cellText=party_pref_table.values.tolist(),
-        colLabels=party_pref_table.columns.tolist(),
+        cellText=table_data.values.tolist(),
+        colLabels=table_data.columns.tolist(),
         cellLoc='center',
         loc='upper center'
     )
 
-    n_rows = len(party_pref_table) + 1
-    n_cols = len(party_pref_table.columns)
-    max_idx = party_pref_table.iloc[:-1]['COUNT'].idxmax()
+    n_rows = len(table_data) + 1
+    n_cols = len(table_data.columns)
+    max_idx = party_pref_table.iloc[:-1]['COUNT'].astype(int).idxmax()
 
     for i in range(n_rows):
         for j in range(n_cols):
             cell = table[i, j]
             cell.set_edgecolor(border_color)
 
-            if i == 0:  # Header
+            if i == 0:
                 cell.set_facecolor(header_color)
                 cell.set_text_props(weight='bold', color='white', fontsize=12)
                 cell.get_text().set_fontproperties(aptos_font)
-
-            elif i == max_idx + 1:  # Highlight max row
+            elif i == max_idx + 1:
                 cell.set_facecolor('#00FF00')
                 cell.set_text_props(weight='bold', fontsize=10)
                 cell.get_text().set_fontproperties(aptos_font)
-
-            elif i == n_rows - 1:  # Totals row
+            elif i == n_rows - 1:
                 cell.set_facecolor(total_color)
                 cell.set_text_props(weight='bold', color='black', fontsize=10)
                 cell.get_text().set_fontproperties(aptos_font)
-
             else:
                 cell.set_facecolor('white')
                 cell.set_text_props(fontsize=9)
@@ -328,35 +340,20 @@ def plot_voter_swing_matrix(data, pivot_data, col_order):
 # ---------------- TABLE 3: MLA Change ----------------
 def get_mla_change_table(df):
     mla_change_col = 'would you like to change your MLA this time?'
-
     df_mla = df.copy()
     df_mla = df_mla[df_mla[mla_change_col].str.upper() != 'CALL DISCONNECTED']
 
-    # Group and count
     mla_counts = df_mla[mla_change_col].value_counts().reset_index()
     mla_counts.columns = ['RESPONSE', 'COUNT']
 
-    # Calculate percentage
     total_count = mla_counts['COUNT'].sum()
     mla_counts['PERCENTAGE'] = (mla_counts['COUNT'] / total_count * 100).round(2).astype(str) + '%'
 
-    # Response order
-    response_order = [
-        'Yes',
-        'No',
-        'Our MLA is doing a good job',
-        'Other (please specify)',
-        "Can't Say"
-    ]
+    response_order = ['Yes','No','Our MLA is doing a good job','Other (please specify)',"Can't Say"]
     mla_counts['RESPONSE'] = pd.Categorical(mla_counts['RESPONSE'], categories=response_order, ordered=True)
     mla_counts = mla_counts.sort_values('RESPONSE')
 
-    # Append total row
-    total_row = pd.DataFrame([{
-        'RESPONSE': 'TOTAL',
-        'COUNT': total_count,
-        'PERCENTAGE': '100.00%'
-    }])
+    total_row = pd.DataFrame([{'RESPONSE': 'TOTAL','COUNT': total_count,'PERCENTAGE': '100.00%'}])
     mla_counts = pd.concat([mla_counts, total_row], ignore_index=True)
 
     return mla_counts
@@ -379,30 +376,34 @@ def plot_mla_change_table(mla_counts):
         fontsize=10, fontproperties=bold_font, ha='left'
     )
 
+    # format numbers only at display
+    table_data = mla_counts.copy()
+    table_data['COUNT'] = table_data['COUNT'].apply(format_number)
+
     table = ax.table(
-        cellText=mla_counts.values.tolist(),
-        colLabels=mla_counts.columns.tolist(),
+        cellText=table_data.values.tolist(),
+        colLabels=table_data.columns.tolist(),
         cellLoc='center',
         loc='upper center',
         colWidths=[0.45, 0.25, 0.30]
     )
 
-    n_rows = len(mla_counts) + 1
-    n_cols = len(mla_counts.columns)
+    n_rows = len(table_data) + 1
+    n_cols = len(table_data.columns)
 
     for i in range(n_rows):
         for j in range(n_cols):
             cell = table[i, j]
             cell.set_edgecolor(border_color)
-            if i == 0:  # Header
+            if i == 0:
                 cell.set_facecolor(header_color)
                 cell.set_text_props(weight='bold', color='white', fontsize=10)
                 cell.get_text().set_fontproperties(aptos_font)
-            elif i == n_rows - 1:  # Total row
+            elif i == n_rows - 1:
                 cell.set_facecolor(total_color)
                 cell.set_text_props(weight='bold', fontsize=9)
                 cell.get_text().set_fontproperties(aptos_font)
-            else:  # Data rows
+            else:
                 cell.set_facecolor('white')
                 cell.set_text_props(fontsize=9)
                 cell.get_text().set_fontproperties(aptos_font)
@@ -789,21 +790,15 @@ def get_demo_party_table(df, group_col, group_label, sort_by_sample=False):
 
     colname = 'If elections were held in Punjab today, which party would you v'
     df[colname] = df[colname].replace(vote_map).fillna("Other").astype(str).str.strip()
-
-    # Clean group column
     df[group_col] = df[group_col].fillna("").astype(str).str.strip()
-
-    # Clean the group column by removing variants of 'CALL DISCONNECTED', 'null', ''
     df = df[~df[group_col].str.contains(r'(?i)call disconnected|^$|null|unknown', na=False)]
 
-    party_order = ['AAP', 'INC', 'BJP', 'SAD (B)', 'SAD (A)',
-                   'BSP', 'Akali Dal (WPD)', 'NOTA', 'Other', "Can't Say"]
+    party_order = ['AAP','INC','BJP','SAD (B)','SAD (A)','BSP','Akali Dal (WPD)','NOTA','Other',"Can't Say"]
 
     result = []
     for group, gdf in df.groupby(group_col):
         counts = gdf[colname].value_counts()
         total = counts.sum()
-
         row = {group_label: group, 'SAMPLE': total}
         for party in party_order:
             pct = counts.get(party, 0) / total * 100 if total > 0 else 0
@@ -812,15 +807,10 @@ def get_demo_party_table(df, group_col, group_label, sort_by_sample=False):
 
     demo_table = pd.DataFrame(result)
     demo_table = demo_table[[group_label, 'SAMPLE'] + party_order]
-
-    # Sort by sample size if needed
     if sort_by_sample:
         demo_table = demo_table.sort_values(by='SAMPLE', ascending=False)
 
     return demo_table
-
-
-
 
 def plot_demo_party_table(table, section_title, sub_title, sort_by_sample=False):
     bold_font = fm.FontProperties(fname="Aptos-Display-Bold.ttf")
@@ -829,7 +819,6 @@ def plot_demo_party_table(table, section_title, sub_title, sort_by_sample=False)
     header_color = '#073763'
     border_color = '#000000'
 
-    # If sort_by_sample is True, sort the table based on sample size in descending order
     if sort_by_sample:
         table = table.sort_values(by='SAMPLE', ascending=False)
 
@@ -837,37 +826,13 @@ def plot_demo_party_table(table, section_title, sub_title, sort_by_sample=False)
     ax = fig.add_axes([0.05, 0.4, 0.9, 0.7])
     ax.axis('off')
 
-    # Section + Sub Title
     ax.text(-0.027, 1.32, section_title, fontsize=13, fontproperties=bold_font, ha='left')
     ax.text(-0.027, 1.10, sub_title, fontsize=11, fontproperties=bold_font, ha='left')
 
+    table_data = table.copy()
+    table_data['SAMPLE'] = table_data['SAMPLE'].apply(format_number)  # format samples only here
+    table_data = [table_data.columns.tolist()] + table_data.values.tolist()
 
-    # Function to wrap long column header text (specific ones like "Akali Dal (WPD)")
-    def wrap_header_text(label):
-        if label == "Akali Dal (WPD)":  # Only wrap this specific header
-            words = label.split()
-            line1 = ' '.join(words[:2])  # "Akali Dal"
-            line2 = ' '.join(words[2:])  # "(WPD)"
-            return line1 + '\n' + line2
-        return label
-
-    # Function to wrap specific cell values
-    def wrap_cell_text(value):
-        if value == "Does not follow any religion":  # Wrap specific cell value
-            words = value.split()
-            return words[0] + '\n' + ' '.join(words[1:])  # Wrap after first word
-        return value
-
-    # Apply wrap function to column headers
-    wrapped_columns = [wrap_header_text(col) for col in table.columns.tolist()]
-
-    # Prepare table data and apply wrapping to specific cell values
-    table_data = []
-    for row in table.values.tolist():
-        wrapped_row = [wrap_cell_text(val) for val in row]
-        table_data.append(wrapped_row)
-
-    table_data.insert(0, wrapped_columns)  # Insert wrapped column headers
     table_plot = ax.table(
         cellText=table_data,
         cellLoc='center',
@@ -876,7 +841,7 @@ def plot_demo_party_table(table, section_title, sub_title, sort_by_sample=False)
     )
 
     for i in range(len(table_data)):
-        for j in range(len(table.columns)):
+        for j in range(len(table_data[0])):
             cell = table_plot[i, j]
             cell.set_edgecolor(border_color)
             if i == 0:
