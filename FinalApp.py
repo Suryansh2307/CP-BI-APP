@@ -40,6 +40,25 @@ def clean_constituency(val):
 # ---------------- STREAMLIT CONFIG ----------------
 st.set_page_config(page_title="Client Dashboard", layout="wide")
 
+
+# Reduce top spacing globally (mobile + desktop)
+reduce_top_spacing = """
+    <style>
+    /* Works for all screen sizes */
+    .block-container {
+        padding-top: 0.2rem !important;   /* adjust to 0 for no gap at all */
+    }
+
+    /* Optional: also tighten bottom space */
+    .block-container {
+        padding-bottom: 1rem !important;
+    }
+    </style>
+"""
+st.markdown(reduce_top_spacing, unsafe_allow_html=True)
+
+
+
 # ---------------- DB CONNECTION ----------------
 @st.cache_resource
 def init_engine():
@@ -793,6 +812,10 @@ def get_demo_party_table(df, group_col, group_label, sort_by_sample=False):
     df[group_col] = df[group_col].fillna("").astype(str).str.strip()
     df = df[~df[group_col].str.contains(r'(?i)call disconnected|^$|null|unknown', na=False)]
 
+    # ✅ Only drop "Below 18" if the grouping column is Age group
+    if group_col == "Age group":
+        df = df[df[group_col].str.strip().str.lower() != "below 18"]
+
     party_order = ['AAP','INC','BJP','SAD (B)','SAD (A)','BSP','Akali Dal (WPD)','NOTA','Other',"Can't Say"]
 
     result = []
@@ -807,10 +830,22 @@ def get_demo_party_table(df, group_col, group_label, sort_by_sample=False):
 
     demo_table = pd.DataFrame(result)
     demo_table = demo_table[[group_label, 'SAMPLE'] + party_order]
-    if sort_by_sample:
+
+    # ✅ Force Male first, Female second (only for Gender)
+    if group_label.upper() == "GENDER":
+        gender_order = ["Male", "Female"]
+        categories = list(dict.fromkeys(gender_order + demo_table[group_label].tolist()))
+        demo_table[group_label] = pd.Categorical(
+            demo_table[group_label], 
+            categories=categories,
+            ordered=True
+        )
+        demo_table = demo_table.sort_values(by=group_label)
+    elif sort_by_sample:
         demo_table = demo_table.sort_values(by='SAMPLE', ascending=False)
 
     return demo_table
+
 
 def plot_demo_party_table(table, section_title, sub_title, sort_by_sample=False):
     bold_font = fm.FontProperties(fname="Aptos-Display-Bold.ttf")
@@ -818,6 +853,7 @@ def plot_demo_party_table(table, section_title, sub_title, sort_by_sample=False)
 
     header_color = '#073763'
     border_color = '#000000'
+    highlight_color = '#00FF00'
 
     if sort_by_sample:
         table = table.sort_values(by='SAMPLE', ascending=False)
@@ -877,6 +913,21 @@ def plot_demo_party_table(table, section_title, sub_title, sort_by_sample=False)
                 cell.set_facecolor('white')
                 cell.set_text_props(fontsize=9)
                 cell.get_text().set_fontproperties(aptos_font)
+        # Row-wise highlight (skip header row)
+        if i > 0:
+            row_vals = table_data[i][2:]  # only party % values (skip group + sample)
+            numeric_vals = []
+            for val in row_vals:
+                try:
+                    numeric_vals.append(float(str(val).replace('%', '').strip()))
+                except:
+                    numeric_vals.append(-1)  # ignore invalids
+
+            if numeric_vals and max(numeric_vals) >= 0:
+                max_idx = numeric_vals.index(max(numeric_vals))
+                highlight_col = max_idx + 2  # +2 to offset group+sample columns
+                table_plot[i, highlight_col].set_facecolor(highlight_color)
+                table_plot[i, highlight_col].set_text_props(weight='bold')
 
     table_plot.auto_set_font_size(False)
     table_plot.set_fontsize(10)
@@ -888,7 +939,7 @@ def plot_demo_party_table(table, section_title, sub_title, sort_by_sample=False)
 st.markdown(
     '<div style="background-color:#e74c3c; padding:12px; text-align:center; '
     'color:white; font-size:22px; font-weight:bold; border-radius:5px;">'
-    'PRIMARY INTELLIGENCE AND DISCOVERY INTERFACE CATI</div>',
+    'PRIMARY INTELLIGENCE AND DISCOVERY INTERFACE : CATI</div>',
     unsafe_allow_html=True
 )
 
@@ -908,13 +959,6 @@ with col1:
     date_range = st.date_input("Select date range", [min_date, max_date], min_value=min_date, max_value=max_date)
     start_date, end_date = date_range if len(date_range) == 2 else (min_date, max_date)
 
-with col2:
-    st.markdown(
-        '<div style="background-color:#0077c8; padding:10px; margin-top:24px; '
-        'text-align:center; color:white; font-size:18px; font-weight:bold; border-radius:5px;">'
-        'STATE LEVEL</div>',
-        unsafe_allow_html=True
-    )
 
 # --- Constituency Dropdown ---
 with col3:
@@ -935,6 +979,63 @@ with col3:
     const_list = sorted(const_map.keys())
     const_list.insert(0, "All")
     constituency = st.selectbox("Constituency", const_list)
+
+with col2:
+    if constituency == "All":
+        st.markdown(
+            '<div style="background-color:#0077c8; padding:10px; margin-top:24px; '
+            'text-align:center; color:white; font-size:18px; font-weight:bold; border-radius:5px;">'
+            'STATE LEVEL</div>',
+            unsafe_allow_html=True
+        )
+    else:
+        # === AC NAME + MLA INFO ===
+        ac_name_clean = constituency.upper()
+        mla_df = pd.read_excel("MLALIST2.xlsx")
+        mla_df.columns = mla_df.columns.str.strip()
+        mla_df.rename(columns={
+            'AC NAME': 'Constituency',
+            '1. Who is your MLA ?': 'MLA_NAME',
+            '2. MLA belongs to which party ?': 'MLA_PARTY'
+        }, inplace=True)
+
+        mla_info = mla_df[mla_df['Constituency'].str.strip().str.lower() == ac_name_clean.lower()]
+        if not mla_info.empty:
+            mla_name = mla_info['MLA_NAME'].values[0].strip()
+            mla_party = mla_info['MLA_PARTY'].values[0].strip()
+            try:
+                ac_no = mla_info.index[0] + 1
+            except:
+                ac_no = "NA"
+        else:
+            mla_name, mla_party, ac_no = "NA", "NA", "NA"
+
+        party_map = {
+            'Aam Aadmi Party (AAP)': 'AAP',
+            'Akali Dal (Waris Punjab De)': 'Akali Dal (WPD)',
+            'Bahujan Samaj Party (BSP)': 'BSP',
+            'Bharatiya Janata Party (BJP)': 'BJP',
+            'Congress': 'INC',
+            'Shiromani Akali Dal (Amritsar)': 'SAD (A)',
+            'Shiromani Akali Dal (Badal)': 'SAD (B)',
+            'NOTA': 'NOTA',
+            'Other': 'Other',
+            "Can't Say": "Can't Say"
+        }
+        mla_party_short = party_map.get(mla_party, mla_party)
+
+        # Blue AC banner
+        st.markdown(
+            f'<div style="background-color:#0077c8; padding:10px; margin-top:24px; '
+            f'text-align:center; color:white; font-size:18px; font-weight:bold; border-radius:5px;">'
+            f'AC NO: {ac_no} - {ac_name_clean}</div>',
+            unsafe_allow_html=True
+        )
+
+        st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
+
+
+
 
 # ---------------- MAIN DATA QUERY ----------------
 if constituency == "All":
@@ -1005,6 +1106,7 @@ if not df.empty:
     # --- Grey MLA header ---
     # --- Grey MLA header ---
     if constituency != "All":
+         # === AC NAME + MLA INFO ===
         ac_name_clean = constituency.upper()
         mla_df = pd.read_excel("MLALIST2.xlsx")
         mla_df.columns = mla_df.columns.str.strip()
@@ -1018,10 +1120,13 @@ if not df.empty:
         if not mla_info.empty:
             mla_name = mla_info['MLA_NAME'].values[0].strip()
             mla_party = mla_info['MLA_PARTY'].values[0].strip()
+            try:
+                ac_no = mla_info.index[0] + 1
+            except:
+                ac_no = "NA"
         else:
-            mla_name, mla_party = "NA", "NA"
+            mla_name, mla_party, ac_no = "NA", "NA", "NA"
 
-        # ✅ Party short names mapping (same as Table 1)
         party_map = {
             'Aam Aadmi Party (AAP)': 'AAP',
             'Akali Dal (Waris Punjab De)': 'Akali Dal (WPD)',
@@ -1037,10 +1142,10 @@ if not df.empty:
         mla_party_short = party_map.get(mla_party, mla_party)
 
         st.markdown(
-            f'<div style="background-color:#7f8c8d; padding:8px; text-align:center; '
-            f'color:white; font-size:16px; font-weight:bold; border-radius:5px;">'
-            f'{ac_name_clean} — {mla_name} ({mla_party_short})</div>',
-            unsafe_allow_html=True
+                f'<div style="background-color:#7f8c8d; padding:8px; text-align:center; '
+                f'color:white; font-size:16px; font-weight:bold; border-radius:5px;">'
+                f'MLA NAME - {mla_name} ({mla_party_short})</div>',
+                unsafe_allow_html=True
         )
 
         # ✅ Add extra spacing before Table 1
