@@ -16,26 +16,6 @@ hide_streamlit_style = """
 """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
-# Hide Streamlit branding on both desktop & mobile
-# hide_streamlit_style = """
-#     <style>
-#     #MainMenu {visibility: hidden;}
-#     header {visibility: hidden;}
-#     footer {visibility: hidden;}
-    
-#     /* Hide deploy button, Streamlit watermark, and top-right menu on mobile */
-#     [data-testid="stToolbar"] {visibility: hidden !important;}
-#     [data-testid="stDecoration"] {visibility: hidden !important;}
-#     [data-testid="stStatusWidget"] {visibility: hidden !important;}
-#     [data-testid="stHeader"] {visibility: hidden !important;}
-#     [data-testid="stSidebarNav"] {visibility: hidden !important;}
-#     [data-testid="stBranding"] {visibility: hidden !important;}
-#     [data-testid="stAppViewBlockContainer"] iframe {display: none !important;}
-#     </style>
-# """
-# st.markdown(hide_streamlit_style, unsafe_allow_html=True)
-
-
 
 
 def format_number(n):
@@ -849,9 +829,34 @@ def plot_demo_party_table(table, section_title, sub_title, sort_by_sample=False)
     ax.text(-0.027, 1.32, section_title, fontsize=13, fontproperties=bold_font, ha='left')
     ax.text(-0.027, 1.10, sub_title, fontsize=11, fontproperties=bold_font, ha='left')
 
-    table_data = table.copy()
-    table_data['SAMPLE'] = table_data['SAMPLE'].apply(format_number)  # format samples only here
-    table_data = [table_data.columns.tolist()] + table_data.values.tolist()
+    def wrap_header_text(label):
+        """Wrap long header text manually if needed"""
+        if label == "Akali Dal (WPD)":
+            return "Akali\nDal (WPD)"
+        return label
+
+    def wrap_cell_text(value):
+        """Wrap specific long values + format numbers with commas"""
+        # Apply number formatting if numeric
+        if isinstance(value, (int, float)):
+            return format_number(value)
+
+        # Apply special wrapping for long text
+        if isinstance(value, str) and value.strip().lower() == "does not follow any religion":
+            return "Does\nnot follow any religion"
+
+        return value
+
+    # === Apply to headers ===
+    wrapped_columns = [wrap_header_text(col) for col in table.columns.tolist()]
+
+    # === Apply to data rows ===
+    wrapped_rows = []
+    for row in table.values.tolist():
+        wrapped_rows.append([wrap_cell_text(val) for val in row])
+
+    # === Final table data ===
+    table_data = [wrapped_columns] + wrapped_rows
 
     table_plot = ax.table(
         cellText=table_data,
@@ -1070,7 +1075,7 @@ if not df.empty:
 
     # ---- DEMOGRAPHIC TABLES ----
     gender_table = get_demo_party_table(df, "Gender", "GENDER", sort_by_sample=False)
-    st.pyplot(plot_demo_party_table(gender_table, "", "A. GENDER WISE PARTY PREFERENCE"))
+    st.pyplot(plot_demo_party_table(gender_table, "8. DEMOGRAPHICAL  PREFERENCE OF PARTY", "A. GENDER WISE PARTY PREFERENCE"))
 
     age_table = get_demo_party_table(df, "Age group", "AGE GROUP", sort_by_sample=False)
     st.pyplot(plot_demo_party_table(age_table, "", "B. AGE GROUP WISE PARTY PREFERENCE"))
