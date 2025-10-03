@@ -7,33 +7,33 @@ from matplotlib.patches import Rectangle
 import decimal
 from difflib import SequenceMatcher
 # Hide Streamlit style (footer, menu, "Made with Streamlit" etc.)
-# hide_streamlit_style = """
-#     <style>
-#     #MainMenu {visibility: hidden;}
-#     footer {visibility: hidden;}
-#     header {visibility: hidden;}
-#     </style>
-# """
-# st.markdown(hide_streamlit_style, unsafe_allow_html=True)
-
-# Hide Streamlit branding on both desktop & mobile
 hide_streamlit_style = """
     <style>
     #MainMenu {visibility: hidden;}
-    header {visibility: hidden;}
     footer {visibility: hidden;}
-    
-    /* Hide deploy button, Streamlit watermark, and top-right menu on mobile */
-    [data-testid="stToolbar"] {visibility: hidden !important;}
-    [data-testid="stDecoration"] {visibility: hidden !important;}
-    [data-testid="stStatusWidget"] {visibility: hidden !important;}
-    [data-testid="stHeader"] {visibility: hidden !important;}
-    [data-testid="stSidebarNav"] {visibility: hidden !important;}
-    [data-testid="stBranding"] {visibility: hidden !important;}
-    [data-testid="stAppViewBlockContainer"] iframe {display: none !important;}
+    header {visibility: hidden;}
     </style>
 """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+
+# Hide Streamlit branding on both desktop & mobile
+# hide_streamlit_style = """
+#     <style>
+#     #MainMenu {visibility: hidden;}
+#     header {visibility: hidden;}
+#     footer {visibility: hidden;}
+    
+#     /* Hide deploy button, Streamlit watermark, and top-right menu on mobile */
+#     [data-testid="stToolbar"] {visibility: hidden !important;}
+#     [data-testid="stDecoration"] {visibility: hidden !important;}
+#     [data-testid="stStatusWidget"] {visibility: hidden !important;}
+#     [data-testid="stHeader"] {visibility: hidden !important;}
+#     [data-testid="stSidebarNav"] {visibility: hidden !important;}
+#     [data-testid="stBranding"] {visibility: hidden !important;}
+#     [data-testid="stAppViewBlockContainer"] iframe {display: none !important;}
+#     </style>
+# """
+# st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
 
 
