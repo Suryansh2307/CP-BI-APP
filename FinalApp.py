@@ -77,10 +77,9 @@ def run_query(query, params=None):
         return pd.read_sql(text(query), conn, params=params)
 
 # -------------------------------------------------
-# YOUR EXISTING FUNCTIONS (Tables 1–7, Demographics, etc.)
+
 # -------------------------------------------------
-# NOTE: I won’t rewrite them line-by-line here since they are exactly what you already pasted.
-# Just keep them as in your original script: 
+
 # - get_party_preference_table / plot_party_table
 # - get_voter_swing_matrix / plot_voter_swing_matrix
 # - get_mla_change_table / plot_mla_change_table
