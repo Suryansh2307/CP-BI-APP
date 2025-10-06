@@ -61,7 +61,7 @@ st.markdown(reduce_top_spacing, unsafe_allow_html=True)
 
 # ---------------- DB CONNECTION ----------------
 @st.cache_resource
-def init_engine():
+def init_engine(show_spinner=False):
     creds = st.secrets["postgres"]  # stored in .streamlit/secrets.toml
     engine = create_engine(
         f'postgresql+psycopg2://{creds["user"]}:{creds["password"]}@'
@@ -69,7 +69,8 @@ def init_engine():
     )
     return engine
 
-@st.cache_data
+# 1) Add TTL so new rows appear automatically
+@st.cache_data(ttl=60,show_spinner=False)   # refresh every 60s; tune as needed
 def run_query(query, params=None):
     engine = init_engine()
     with engine.connect() as conn:
@@ -90,7 +91,6 @@ def run_query(query, params=None):
 # -------------------------------------------------
 
 # ---------------- PARTY PREF TABLE (Table 1) ----------------
-# ---------------- TABLE 1: PARTY PREF ----------------
 def get_party_preference_table(df):
     vote_map = {
         'Aam Aadmi Party (AAP)': 'AAP',
@@ -106,13 +106,10 @@ def get_party_preference_table(df):
     }
 
     colname = 'If elections were held in Punjab today, which party would you v'
-    df[colname] = (
-        df[colname]
-        .replace(vote_map)
-        .fillna("Other")
-        .astype(str)
-        .str.strip()
-    )
+    
+    # df is already filtered, just map the values
+    df = df.copy()
+    df[colname] = df[colname].replace(vote_map).fillna("Other").astype(str).str.strip()
 
     party_order = ['AAP', 'INC', 'BJP', 'SAD (B)', 'SAD (A)', 
                    'BSP', 'Akali Dal (WPD)', 'NOTA', 'Other', "Can't Say"]
@@ -132,6 +129,8 @@ def get_party_preference_table(df):
     party_pref_table = pd.concat([party_pref_table, pd.DataFrame([total_row])], ignore_index=True)
 
     return party_pref_table
+
+
 
 def plot_party_table(party_pref_table):
     bold_font = fm.FontProperties(fname="Aptos-Display-Bold.ttf")
@@ -1059,7 +1058,10 @@ if constituency == "All":
         "FROM \"PUNJAB_2025\".\"CP_SURVEY_14_JULY\" "
         "WHERE \"Date\" BETWEEN :start_date AND :end_date "
         "AND \"What is the name of your constituency?\" NOT IN "
-        "('Call Disconnected','Don''Know','','OUT of Assembly/ OUT of State');",
+        "('Call Disconnected','Don''t Know','','OUT of Assembly/ OUT of State') "
+        "AND \"If elections were held in Punjab today, which party would you v\" IS NOT NULL "
+        "AND TRIM(\"If elections were held in Punjab today, which party would you v\") != '' "
+        "AND UPPER(\"If elections were held in Punjab today, which party would you v\") != 'CALL DISCONNECTED';",
         params={"start_date": start_date, "end_date": end_date}
     )
 else:
@@ -1085,21 +1087,25 @@ else:
         "WHERE \"Date\" BETWEEN :start_date AND :end_date "
         "AND \"What is the name of your constituency?\" = :const "
         "AND \"What is the name of your constituency?\" NOT IN "
-        "('Call Disconnected','Don''Know','','OUT of Assembly/ OUT of State');",
+        "('Call Disconnected','Don''t Know','','OUT of Assembly/ OUT of State') "
+        "AND \"If elections were held in Punjab today, which party would you v\" IS NOT NULL "
+        "AND TRIM(\"If elections were held in Punjab today, which party would you v\") != '' "
+        "AND UPPER(\"If elections were held in Punjab today, which party would you v\") != 'CALL DISCONNECTED';",
         params={"start_date": start_date, "end_date": end_date, "const": original_const}
     )
-
 # ---------------- TABLES ----------------
 if not df.empty:
     party_pref_table = get_party_preference_table(df)
     sample_size = int(party_pref_table.loc[party_pref_table["PARTY PREFERENCE"] == "TOTAL", "COUNT"].values[0])
 
+
     st.markdown(
-        f'<div style="background-color:#a0a0a0; padding:8px; text-align:center; '
-        f'color:white; font-size:16px; font-weight:bold; border-radius:5px;">'
-        f'SAMPLE SIZE: {sample_size:,}</div>',
-        unsafe_allow_html=True
+    f'<div style="background-color:#a0a0a0; padding:8px; text-align:center; '
+    f'color:white; font-size:16px; font-weight:bold; border-radius:5px;">'
+    f'SAMPLE SIZE: {sample_size:,}</div>',
+    unsafe_allow_html=True
     )
+
 
     st.markdown("<div style='height:15px;'></div>", unsafe_allow_html=True)
 
